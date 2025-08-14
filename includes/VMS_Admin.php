@@ -58,7 +58,7 @@ class VMS_Admin
         $settings_link = sprintf(
             '<a href="%s">%s</a>',
             esc_url(admin_url('admin.php?page=cyber-wakili-settings')),
-            esc_html__('Settings', 'cyber-wakili-plugin')
+            esc_html__('Settings', 'vms')
         );
         array_unshift($links, $settings_link);
         return $links;
@@ -70,8 +70,8 @@ class VMS_Admin
     public function add_admin_menu(): void
     {
         add_menu_page(
-            __('Cyber Wakili', 'cyber-wakili-plugin'),
-            __('Cyber Wakili', 'cyber-wakili-plugin'),
+            __('Cyber Wakili', 'vms'),
+            __('Cyber Wakili', 'vms'),
             'manage_options',
             'cyber-wakili-settings',
             [$this, 'render_settings_page'],
@@ -107,14 +107,14 @@ class VMS_Admin
 
         add_settings_section(
             'cyber_wakili_main_section',
-            __('API Configuration', 'cyber-wakili-plugin'),
+            __('API Configuration', 'vms'),
             [$this, 'render_section_description'],
             $this->settings_group
         );
 
         add_settings_field(
             'cyber_wakili_auth_code',
-            __('Auth Code', 'cyber-wakili-plugin'),
+            __('Auth Code', 'vms'),
             [$this, 'render_auth_code_field'],
             $this->settings_group,
             'cyber_wakili_main_section'
@@ -122,7 +122,7 @@ class VMS_Admin
 
         add_settings_field(
             'cyber_wakili_redirect_uri',
-            __('Redirect URI', 'cyber-wakili-plugin'),
+            __('Redirect URI', 'vms'),
             [$this, 'render_redirect_uri_field'],
             $this->settings_group,
             'cyber_wakili_main_section'
@@ -136,14 +136,14 @@ class VMS_Admin
     {
         if (!current_user_can('manage_options')) {
             wp_die(
-                __('You do not have sufficient permissions to access this page.', 'cyber-wakili-plugin'),
-                __('Access Denied', 'cyber-wakili-plugin'),
+                __('You do not have sufficient permissions to access this page.', 'vms'),
+                __('Access Denied', 'vms'),
                 ['response' => 403]
             );
         }
         ?>
 <div class="wrap">
-    <h1><?php esc_html_e('Cyber Wakili Integration Settings', 'cyber-wakili-plugin'); ?></h1>
+    <h1><?php esc_html_e('Cyber Wakili Integration Settings', 'vms'); ?></h1>
     <form method="post" action="options.php">
         <?php
                 settings_fields($this->settings_group);
@@ -160,7 +160,7 @@ class VMS_Admin
      */
     public function render_section_description(): void
     {
-        echo '<p>' . esc_html__('Configure your Cyber Wakili API settings below.', 'cyber-wakili-plugin') . '</p>';
+        echo '<p>' . esc_html__('Configure your Cyber Wakili API settings below.', 'vms') . '</p>';
     }
 
     /**
@@ -173,7 +173,7 @@ class VMS_Admin
 <input type="text" name="cyber_wakili_auth_code" id="cyber_wakili_auth_code" value="<?php echo esc_attr($value); ?>"
     class="regular-text">
 <p class="description">
-    <?php esc_html_e('Enter your authentication code provided by Cyber Wakili.', 'cyber-wakili-plugin'); ?>
+    <?php esc_html_e('Enter your authentication code provided by Cyber Wakili.', 'vms'); ?>
 </p>
 <?php
     }
@@ -188,7 +188,7 @@ class VMS_Admin
 <input type="url" name="cyber_wakili_redirect_uri" id="cyber_wakili_redirect_uri" value="<?php echo esc_url($value); ?>"
     class="regular-text">
 <p class="description">
-    <?php esc_html_e('Enter the redirect URI for OAuth authentication.', 'cyber-wakili-plugin'); ?>
+    <?php esc_html_e('Enter the redirect URI for OAuth authentication.', 'vms'); ?>
 </p>
 <?php
     }

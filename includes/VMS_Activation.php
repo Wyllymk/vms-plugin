@@ -19,7 +19,7 @@ class VMS_Activation
     public static function activate(): void
     {
         self::create_essential_pages();
-        self::create_database_tables();
+        // self::create_database_tables();
         flush_rewrite_rules();
     }
 
@@ -52,8 +52,8 @@ class VMS_Activation
                 'template' => 'page-templates/page-login.php'
             ],
             [
-                'title' => 'Register Employee',
-                'template' => 'page-templates/page-register-employee.php'
+                'title' => 'Register',
+                'template' => 'page-templates/page-register.php'
             ],
             [
                 'title' => 'Lost Password',
@@ -64,7 +64,7 @@ class VMS_Activation
                 'template' => 'page-templates/page-password-reset.php'
             ],
             [
-                'title' => 'Terms and Conditions'
+                'title' => 'Terms & Conditions'
             ],
             [
                 'title' => 'Profile',
@@ -75,6 +75,10 @@ class VMS_Activation
                 'template' => 'page-templates/page-dashboard.php'
             ],
             [
+                'title' => 'Members',
+                'template' => 'page-templates/page-members.php'
+            ],
+            [
                 'title' => 'Employees',
                 'template' => 'page-templates/page-employees.php'
             ],
@@ -83,40 +87,16 @@ class VMS_Activation
                 'template' => 'page-templates/page-employee-details.php'
             ],
             [
-                'title' => 'Clients',
-                'template' => 'page-templates/page-clients.php'
+                'title' => 'Guests',
+                'template' => 'page-templates/page-guests.php'
             ],
             [
-                'title' => 'Client Details',
-                'template' => 'page-templates/page-client-details.php'
-            ],
-            [
-                'title' => 'Tasks',
-                'template' => 'page-templates/page-tasks.php'
-            ],
-            [
-                'title' => 'Cases',
-                'template' => 'page-templates/page-cases.php'
-            ],
-            [
-                'title' => 'Files',
-                'template' => 'page-templates/page-files.php'
-            ],
-            [
-                'title' => 'Payments',
-                'template' => 'page-templates/page-payments.php'
-            ],
-            [
-                'title' => 'Messages',
-                'template' => 'page-templates/page-messages.php'
-            ],
+                'title' => 'Guest Details',
+                'template' => 'page-templates/page-guest-details.php'
+            ],            
             [
                 'title' => 'Settings',
                 'template' => 'page-templates/page-settings.php'
-            ],
-            [
-                'title' => 'Calendar',
-                'template' => 'page-templates/page-calendar.php'
             ]
         ];
 
@@ -166,57 +146,6 @@ class VMS_Activation
     }
 
     /**
-     * Create transactions table
-     */
-    private static function create_transactions_table(): void
-    {
-        global $wpdb;
-
-        $table_name = $wpdb->prefix . 'transactions';
-        $charset_collate = $wpdb->get_charset_collate();
-
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id BIGINT UNSIGNED NULL,
-            phone_number VARCHAR(15) NOT NULL,
-            amount DECIMAL(10, 2) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES {$wpdb->users}(ID) ON DELETE SET NULL,
-            INDEX (user_id)
-        ) ENGINE=InnoDB $charset_collate;";
-
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-        dbDelta($sql);
-    }
-
-    /**
-     * Create messages table
-     */
-    private static function create_messages_table(): void
-    {
-        global $wpdb;
-
-        $table_name = $wpdb->prefix . 'mobilesasa_messages';
-        $charset_collate = $wpdb->get_charset_collate();
-
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id BIGINT UNSIGNED,
-            phone_number VARCHAR(15) NOT NULL,
-            message TEXT NOT NULL,
-            message_id VARCHAR(36) NOT NULL,
-            sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            status ENUM('Pending', 'Sent', 'Failed') DEFAULT 'Pending',
-            INDEX (user_id),
-            INDEX (phone_number),
-            INDEX (message_id)
-        ) $charset_collate;";
-
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-        dbDelta($sql);
-    }
-
-    /**
      * Clean up plugin data during uninstall
      */
     private static function remove_plugin_data(): void
@@ -255,21 +184,19 @@ class VMS_Activation
     {
         $pages = [
             'login',
-            'register-advocate',
+            'register',
             'lost-password',
             'password-reset',
-            'terms-of-service',
+            'terms-conditions',
             'profile',
             'dashboard',
             'employees',
-            'advocate-details',
-            'clients',
-            'client-details',
-            'tasks',
-            'payments',
-            'messages',
+            'employee-details',
+            'members',
+            'member-details',
+            'guests',
+            'guest-details',
             'settings',
-            'calendar'
         ];
         
         foreach ($pages as $slug) {

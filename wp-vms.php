@@ -29,15 +29,6 @@ define('VMS_PLUGIN_BASENAME', plugin_basename(__FILE__));
 // Load Composer Autoload
 require_once VMS_PLUGIN_DIR . 'vendor/autoload.php';
 
-// Manually load CMB2 core
-$cmb2_init = VMS_PLUGIN_DIR . 'vendor/cmb2/cmb2/init.php';
-
-if ( file_exists( $cmb2_init ) ) {
-    require_once $cmb2_init;
-} else {
-    error_log('CMB2 init file not found at: ' . $cmb2_init);
-}
-
 /**
  * Main plugin class
  */
@@ -71,7 +62,7 @@ final class VMS_Plugin
     {
         // Load text domain for translations
         load_plugin_textdomain(
-            'cyber-wakili-plugin',
+            'vms',
             false,
             dirname(plugin_basename(__FILE__)) . '/languages'
         );
@@ -90,11 +81,9 @@ final class VMS_Plugin
         VMS_CoreManager::get_instance()->init();
         VMS_NotificationManager::get_instance()->init();
         VMS_FormHandler::get_instance()->init();
-        VMS_CMB2::get_instance()->init();
         VMS_CPTS::get_instance()->init();
         VMS_Roles::get_instance()->init();
         VMS_RestApiManager::get_instance()->init();
-        VMS_Google::get_instance()->init();
     }
 }
 

@@ -116,15 +116,26 @@ class VMS_CoreManager
 
     /**
      * Validate user status during authentication
+     *
+     * @param WP_User|WP_Error $user
+     * @return WP_User|WP_Error
      */
-    public function validate_user_status(WP_User $user): WP_User
-    {
-        if (get_user_meta($user->ID, 'registration_status', true) === 'inactive') {
-            remove_action('wp_authenticate_user', 'wp_authenticate_username_password', 20);
-            $user = new WP_Error('inactive', __('Your account is pending approval. Please try again later.', 'cyber-wakili-plugin'));
+    public function validate_user_status($user) {
+        // If it's already an error, just return it
+        if (is_wp_error($user)) {
+            return $user;
         }
+
+        if (get_user_meta($user->ID, 'registration_status', true) !== 'active') {
+            return new WP_Error(
+                'inactive',
+                __('Your account is pending approval. Please try again later.', 'vms')
+            );
+        }
+
         return $user;
     }
+
 
     /**
      * Custom password reset email
@@ -140,7 +151,7 @@ class VMS_CoreManager
         $user_ip = $_SERVER['REMOTE_ADDR'];
 
         return sprintf(
-            __("Someone has requested a password reset for the following account:\r\n\r\nSite Name: %s\r\nUsername: %s\r\n\r\nIf this was a mistake, ignore this email and nothing will happen.\r\n\r\nTo reset your password, visit the following address:\r\n\r\n%s\r\n\r\nThis password reset request originated from the IP address %s.\r\n", 'cyber-wakili-plugin'),
+            __("Someone has requested a password reset for the following account:\r\n\r\nSite Name: %s\r\nUsername: %s\r\n\r\nIf this was a mistake, ignore this email and nothing will happen.\r\n\r\nTo reset your password, visit the following address:\r\n\r\n%s\r\n\r\nThis password reset request originated from the IP address %s.\r\n", 'vms'),
             $site_name,
             $user_login,
             $reset_url,
@@ -190,7 +201,7 @@ class VMS_CoreManager
         $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
         if (!in_array($file_ext, $allowed_types, true)) {
-            $file['error'] = __('Invalid file type. Allowed types: PDF, DOC, DOCX, TXT, JPG, PNG.', 'cyber-wakili-plugin');
+            $file['error'] = __('Invalid file type. Allowed types: PDF, DOC, DOCX, TXT, JPG, PNG.', 'vms');
         }
 
         return $file;

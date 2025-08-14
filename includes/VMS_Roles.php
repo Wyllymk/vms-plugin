@@ -25,8 +25,8 @@ class VMS_Roles
      * @var array
      */
     private $roles = [
-        'managing_partner' => [
-            'name' => 'Managing Partner',
+        'reception' => [
+            'name' => 'Reception',
             'capabilities' => [
                 'read' => true,
                 'create_cases' => true,
@@ -46,8 +46,29 @@ class VMS_Roles
                 'upload_files' => true,
             ]
         ],
-        'senior_partner' => [
-            'name' => 'Senior Partner',
+        'chairman' => [
+            'name' => 'Chairman',
+            'capabilities' => [
+                'read' => true,
+                'create_cases' => true,
+                'edit_cases' => true,
+                'edit_others_cases' => true,
+                'publish_cases' => true,
+                'read_case' => true,
+                'read_private_cases' => true,
+                'delete_case' => true,
+                'create_tasks' => true,
+                'edit_tasks' => true,
+                'edit_others_tasks' => true,
+                'publish_tasks' => true,
+                'read_task' => true,
+                'read_private_tasks' => true,
+                'delete_task' => true,
+                'upload_files' => true,
+            ]
+        ],
+        'general_manager' => [
+            'name' => 'General Manager',
             'capabilities' => [
                 'read' => true,
                 'create_cases' => true,
@@ -65,8 +86,8 @@ class VMS_Roles
                 'upload_files' => true,
             ]
         ],
-        'advocate' => [
-            'name' => 'Advocate',
+        'member' => [
+            'name' => 'Member',
             'capabilities' => [
                 'read' => true,
                 'edit_cases' => true,
@@ -79,26 +100,19 @@ class VMS_Roles
                 'read_private_tasks' => true,
                 'upload_files' => true,
             ]
-        ],
-        'pupil' => [
-            'name' => 'Pupil',
+        ],       
+        'gate' => [
+            'name' => 'Gate',
             'capabilities' => [
                 'read' => true,
                 'read_case' => true,
                 'read_private_cases' => true,
-                'edit_tasks' => true,
-                'read_task' => true,
-                'read_private_tasks' => true,
-                'upload_files' => true,
             ]
         ],
-        'client' => [
-            'name' => 'Client',
+        'guest' => [
+            'name' => 'Guest',
             'capabilities' => [
                 'read' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
-                'upload_files' => true,
             ]
         ]
     ];
@@ -153,7 +167,7 @@ class VMS_Roles
         foreach ($this->roles as $role_slug => $role_data) {
             add_role(
                 $role_slug,
-                __($role_data['name'], 'cyber-wakili-plugin'),
+                __($role_data['name'], 'vms'),
                 $role_data['capabilities']
             );
         }

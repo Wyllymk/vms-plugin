@@ -60,13 +60,11 @@ class VMS_FormHandler
     private function register_form_handlers(): void
     {
         add_action('template_redirect', [$this, 'handle_settings_form']);
-        add_action('template_redirect', [$this, 'handle_message_form']);
-        add_action('template_redirect', [$this, 'handle_payment_form']);
         add_action('wp_ajax_update_user_profile', [$this, 'handle_profile_update']);
         add_action('wp_ajax_nopriv_update_user_profile', [$this, 'handle_profile_update']);
 
-        add_action('wp_ajax_client_registration', [$this, 'handle_client_registration']);
-        add_action('wp_ajax_nopriv_client_registration', [$this, 'handle_client_registration']);
+        add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
+        add_action('wp_ajax_nopriv_guest_registration', [$this, 'handle_guest_registration']);
     }
 
     /**
@@ -86,12 +84,12 @@ class VMS_FormHandler
 
         if ($sender_id !== get_option('mobilesasa_sender_id')) {
             update_option('mobilesasa_sender_id', $sender_id);
-            $success_messages[] = __('Sender ID updated successfully.', 'cyber-wakili-plugin');
+            $success_messages[] = __('Sender ID updated successfully.', 'vms');
         }
 
         if ($api_token !== get_option('mobilesasa_api_token')) {
             update_option('mobilesasa_api_token', $api_token);
-            $success_messages[] = __('API Token updated successfully.', 'cyber-wakili-plugin');
+            $success_messages[] = __('API Token updated successfully.', 'vms');
         }
 
         if (!empty($success_messages)) {
@@ -100,28 +98,6 @@ class VMS_FormHandler
 
         wp_redirect(site_url('/settings/'));
         exit;
-    }
-
-    /**
-     * Handle message form submission
-     */
-    public function handle_message_form(): void
-    {
-        global $wpdb;
-
-        if (!is_page('messages')) {
-            return;
-        }
-
-        // Handle SMS sending
-        if (isset($_POST['send_sms'])) {
-            $this->process_sms_submission($wpdb);
-        }
-
-        // Handle message deletion
-        if (isset($_POST['delete_message'])) {
-            $this->process_message_deletion($wpdb);
-        }
     }
 
     /**
@@ -144,7 +120,7 @@ class VMS_FormHandler
         );
 
         if (!$user_id) {
-            $errors[] = sprintf(__('No user found with this phone number: %s.', 'cyber-wakili-plugin'), $phone_number);
+            $errors[] = sprintf(__('No user found with this phone number: %s.', 'vms'), $phone_number);
         }
 
         if (empty($errors)) {
@@ -152,11 +128,11 @@ class VMS_FormHandler
 
             if (is_array($sms_sent) && isset($sms_sent['status'], $sms_sent['responseCode'])) {
                 if ($sms_sent['status'] === true) {
-                    $success_messages[] = __('Message successfully sent!', 'cyber-wakili-plugin');
+                    $success_messages[] = __('Message successfully sent!', 'vms');
                 } else {
-                    $errors[] = __('SMS Failed: ', 'cyber-wakili-plugin') . ($sms_sent['message'] ?? '');
+                    $errors[] = __('SMS Failed: ', 'vms') . ($sms_sent['message'] ?? '');
                     if ($sms_sent['responseCode'] === '0422') {
-                        $errors[] = __('The Sender ID is Invalid!', 'cyber-wakili-plugin');
+                        $errors[] = __('The Sender ID is Invalid!', 'vms');
                     }
                 }
             }
@@ -171,7 +147,7 @@ class VMS_FormHandler
     private function process_message_deletion(wpdb $wpdb): void
     {
         if (!isset($_POST['_wpnonce_delete_message']) || !wp_verify_nonce($_POST['_wpnonce_delete_message'], 'delete_message')) {
-            wp_die(__('Nonce verification failed.', 'cyber-wakili-plugin'));
+            wp_die(__('Nonce verification failed.', 'vms'));
         }
 
         $errors = [];
@@ -179,91 +155,20 @@ class VMS_FormHandler
         $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
 
         if (!$id) {
-            wp_die(__('Invalid message ID.', 'cyber-wakili-plugin'));
+            wp_die(__('Invalid message ID.', 'vms'));
         }
 
         $table_name = $wpdb->prefix . 'mobilesasa_messages';
         $message = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
 
         if (!$message) {
-            $errors[] = __('Message not found or already deleted.', 'cyber-wakili-plugin');
+            $errors[] = __('Message not found or already deleted.', 'vms');
         } else {
             $wpdb->delete($table_name, ['id' => $id]);
-            $success_messages[] = __('Message successfully deleted!', 'cyber-wakili-plugin');
+            $success_messages[] = __('Message successfully deleted!', 'vms');
         }
 
         $this->store_messages_and_redirect($errors, $success_messages, '/messages/');
-    }
-
-    /**
-     * Handle payment form submission
-     */
-    public function handle_payment_form(): void
-    {
-        if (!is_page('payments') || !isset($_POST['register_transaction'])) {
-            return;
-        }
-
-        if (!isset($_POST['_wpnonce_mpesa_payment']) || !wp_verify_nonce($_POST['_wpnonce_mpesa_payment'], 'mpesa_payment')) {
-            wp_die(__('Nonce verification failed.', 'cyber-wakili-plugin'));
-        }
-
-        $errors = [];
-        $success_messages = [];
-        $amount = isset($_POST['mpesa_amount']) ? floatval($_POST['mpesa_amount']) : 0;
-        $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
-
-        if (empty($phone_number) || $amount < 1) {
-            $errors[] = __('Please enter a valid phone number and amount.', 'cyber-wakili-plugin');
-        } else {
-            $this->process_payment_transaction($amount, $phone_number, $errors, $success_messages);
-        }
-
-        $this->store_messages_and_redirect($errors, $success_messages, '/payments/');
-    }
-
-    /**
-     * Process payment transaction
-     */
-    private function process_payment_transaction(float $amount, string $phone_number, array &$errors, array &$success_messages): void
-    {
-        global $wpdb;
-
-        $user = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT user_id FROM {$wpdb->prefix}usermeta WHERE meta_key = 'phone_number' AND meta_value = %s LIMIT 1",
-                $phone_number
-            )
-        );
-
-        if (!$user) {
-            $errors[] = __('The phone number entered does not exist in our records.', 'cyber-wakili-plugin');
-            return;
-        }
-
-        $user_data = get_userdata($user->user_id);
-        if (!in_array('client', (array) $user_data->roles)) {
-            $errors[] = __('The specified user does not have permission to make this transaction.', 'cyber-wakili-plugin');
-            return;
-        }
-
-        $result = $wpdb->insert(
-            $wpdb->prefix . 'transactions',
-            [
-                'user_id' => $user->user_id,
-                'phone_number' => $phone_number,
-                'amount' => $amount,
-                'created_at' => current_time('mysql'),
-            ],
-            ['%d', '%s', '%f', '%s']
-        );
-
-        if ($result) {
-            $first_name = get_user_meta($user->user_id, 'first_name', true);
-            $success_messages[] = sprintf(__('Payment of Kshs %s was saved for %s', 'cyber-wakili-plugin'), $amount, $first_name);
-        } else {
-            $errors[] = __('There was an error saving the transaction. Please try again.', 'cyber-wakili-plugin');
-        }
     }
 
     /**
@@ -289,12 +194,12 @@ class VMS_FormHandler
      */
     private function verify_ajax_request(): void
     {
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'cyber_wakili_ajax_nonce')) {
-            wp_send_json_error(['message' => __('Security check failed.', 'cyber-wakili-plugin')]);
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'vms_script_ajax_nonce')) {
+            wp_send_json_error(['message' => __('Security check failed.', 'vms')]);
         }
 
         if (!is_user_logged_in()) {
-            wp_send_json_error(['message' => __('You must be logged in to update your profile.', 'cyber-wakili-plugin')]);
+            wp_send_json_error(['message' => __('You must be logged in to update your profile.', 'vms')]);
         }
     }
 
@@ -316,7 +221,7 @@ class VMS_FormHandler
         if (is_wp_error($result)) {
             $errors[] = $result->get_error_message();
         } else {
-            $success_messages[] = __('Profile updated successfully.', 'cyber-wakili-plugin');
+            $success_messages[] = __('Profile updated successfully.', 'vms');
         }
     }
 
@@ -364,9 +269,9 @@ class VMS_FormHandler
             if ($attachment_id) {
                 update_user_meta($user_id, '_wp_attachment_metadata', get_post_meta($attachment_id, '_wp_attachment_metadata', true));
             }
-            $success_messages[] = __('Profile picture updated successfully.', 'cyber-wakili-plugin');
+            $success_messages[] = __('Profile picture updated successfully.', 'vms');
         } else {
-            $errors[] = __('Error uploading profile picture: ', 'cyber-wakili-plugin') . ($upload['error'] ?? '');
+            $errors[] = __('Error uploading profile picture: ', 'vms') . ($upload['error'] ?? '');
         }
     }
 
@@ -415,15 +320,15 @@ class VMS_FormHandler
     /**
      * Handle profile update via AJAX
      */
-    public function handle_client_registration(): void
+    public function handle_guest_registration(): void
     {
         $this->verify_ajax_request();
 
-        $clients_error = [];
-        $clients_success = [];
+        $guests_error = [];
+        $guests_success = [];
 
         // Initialize dynamic username and password variables
-        $username_prefix = 'Client_';
+        $username_prefix = 'Guest_';
         $user_pass       = wp_generate_password(); 
 
         global $wpdb;
@@ -454,7 +359,7 @@ class VMS_FormHandler
             'user_login' => $user_login,
             'user_pass'  => $user_pass,
             'user_email' => $user_email,
-            'role'       => 'client',
+            'role'       => 'guest',
             'meta_input' => [
                 'first_name'           => $first_name,
                 'last_name'            => $last_name,
@@ -462,13 +367,13 @@ class VMS_FormHandler
                 'receive_messages'     => $receive_messages,
                 'receive_emails'       => $receive_emails,
                 'registration_status'  => 'active',
-                'client_status'        => 'Registry Processing',
+                'guest_status'        => 'Registry Processing',
                 'profile_picture'      => '',
                 'show_admin_bar_front' => 'false',
             ],
         ];
 
-        error_log('Client Registration Data: ' . print_r($data, true)); 
+        error_log('Guest Registration Data: ' . print_r($data, true)); 
 
         $user_id = wp_insert_user(wp_slash($data));
 
@@ -479,13 +384,13 @@ class VMS_FormHandler
         }
 
         // Send Email to Admin (user ID 1)
-        $subject = 'New Client Registration';
-        $message = "Hello Admin,\n\nA new client has registered:\n\nName: {$first_name} {$last_name}\nEmail: {$user_email}\nPhone: {$user_number}\nUsername: {$user_login}\nPassword: {$user_pass}";
+        $subject = 'New Guest Registration';
+        $message = "Hello Admin,\n\nA new guest has registered:\n\nName: {$first_name} {$last_name}\nEmail: {$user_email}\nPhone: {$user_number}\nUsername: {$user_login}\nPassword: {$user_pass}";
 
         $admin_user_email = get_userdata(1)->user_email;
         wp_mail($admin_user_email, $subject, $message);
 
-        // Optional: Send welcome email to client
+        // Optional: Send welcome email to guest
         if ($receive_emails === 'yes') {
             $welcome_subject = 'Your Registration Details';
             $welcome_message = "Hello {$first_name},\n\nYour account has been created successfully.\n\nUsername: {$user_login}\nPassword: {$user_pass}\n\nThank you for registering!";
@@ -495,7 +400,7 @@ class VMS_FormHandler
         // Return success with user data
         $user = get_userdata($user_id);
         wp_send_json_success([
-            'messages' => array_merge($clients_success, ['The Client has been successfully registered.']),
+            'messages' => array_merge($guests_success, ['The Guest has been successfully registered.']),
             'userData' => [
                 'ID'              => $user_id,
                 'first_name'      => $first_name,

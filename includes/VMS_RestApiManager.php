@@ -131,7 +131,7 @@ class VMS_RestApiManager
         if (!$user->exists()) {
             return new WP_Error(
                 'rest_forbidden',
-                __('Authentication required.', 'cyber-wakili-plugin'),
+                __('Authentication required.', 'vms'),
                 ['status' => 401]
             );
         }
@@ -143,7 +143,7 @@ class VMS_RestApiManager
             if ($user->ID !== $client_id) {
                 return new WP_Error(
                     'rest_forbidden',
-                    __('You do not have access to this case.', 'cyber-wakili-plugin'),
+                    __('You do not have access to this case.', 'vms'),
                     ['status' => 403]
                 );
             }
@@ -155,7 +155,7 @@ class VMS_RestApiManager
             if (!in_array($user->ID, $employee_ids, true)) {
                 return new WP_Error(
                     'rest_forbidden',
-                    __('You are not assigned to this case.', 'cyber-wakili-plugin'),
+                    __('You are not assigned to this case.', 'vms'),
                     ['status' => 403]
                 );
             }
@@ -174,7 +174,7 @@ class VMS_RestApiManager
         if (!$user->exists()) {
             return new WP_Error(
                 'rest_forbidden',
-                __('Authentication required.', 'cyber-wakili-plugin'),
+                __('Authentication required.', 'vms'),
                 ['status' => 401]
             );
         }
@@ -182,7 +182,7 @@ class VMS_RestApiManager
         if (in_array('client', (array) $user->roles, true)) {
             return new WP_Error(
                 'rest_forbidden',
-                __('Clients cannot access tasks.', 'cyber-wakili-plugin'),
+                __('Clients cannot access tasks.', 'vms'),
                 ['status' => 403]
             );
         }
@@ -194,7 +194,7 @@ class VMS_RestApiManager
             if ($user->ID !== $assignee_id) {
                 return new WP_Error(
                     'rest_forbidden',
-                    __('You are not assigned to this task.', 'cyber-wakili-plugin'),
+                    __('You are not assigned to this task.', 'vms'),
                     ['status' => 403]
                 );
             }

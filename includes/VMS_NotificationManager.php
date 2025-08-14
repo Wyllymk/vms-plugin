@@ -79,12 +79,12 @@ class VMS_NotificationManager
         }
 
         $subject = sprintf(
-            __('New Task Assigned: %s', 'cyber-wakili-plugin'),
+            __('New Task Assigned: %s', 'vms'),
             get_the_title($post_id)
         );
 
         $message = sprintf(
-            __("Dear %s,\n\nYou have been assigned a new task: %s.\n\nDue Date: %s\n\nView it here: %s\n\nBest regards,\nCyber Wakili", 'cyber-wakili-plugin'),
+            __("Dear %s,\n\nYou have been assigned a new task: %s.\n\nDue Date: %s\n\nView it here: %s\n\nBest regards,\nCyber Wakili", 'vms'),
             $assignee->display_name,
             get_the_title($post_id),
             get_post_meta($post_id, '_task_due_date', true),
