@@ -1,0 +1,35 @@
+{
+  "name": "wylly/wp-vms",
+  "description": "Integrate VMS Functionalities into WordPress",
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "vms",
+    "visitor management system"
+  ],
+  "homepage": "https://github.com/wylly/vms",
+  "version": "1.0.0",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Wyllymk",
+      "email": "wilsonkabatha@gmail.com"
+    }
+  ],
+  "minimum-stability": "dev",
+  "require": {
+    "php": ">=7.4",
+    "cmb2/cmb2": "^2.11"
+  },
+  "autoload": {
+    "psr-4": {
+      "WyllyMk\\VMS\\": "includes/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  }
+}
