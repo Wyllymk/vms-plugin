@@ -1,6 +1,6 @@
 <?php
 /**
- * Core functionality handler for Cyber Wakili plugin
+ * Core functionality handler for VMS plugin
  * 
  * @package WyllyMk\VMS
  * @since 1.0.0
@@ -42,7 +42,10 @@ class VMS_CoreManager
     {
         $this->setup_authentication_hooks();
         $this->setup_security_hooks();
-        $this->setup_file_upload_hooks();
+        // Add other core functionality hooks here
+        // Add action hooks
+        add_action('reset_monthly_guest_limits', [$this, 'reset_monthly_limits']);
+        add_action('reset_yearly_guest_limits', [$this, 'reset_yearly_limits']);
     }
 
     /**
@@ -67,15 +70,6 @@ class VMS_CoreManager
     }
 
     /**
-     * Setup file upload related hooks
-     */
-    private function setup_file_upload_hooks(): void
-    {
-        add_filter('wp_handle_upload_prefilter', [$this, 'validate_file_upload']);
-        add_filter('wp_handle_upload', [$this, 'link_upload_to_case']);
-    }
-
-    /**
      * Handle custom login page redirect
      */
     public function handle_custom_login_redirect(): void
@@ -97,7 +91,7 @@ class VMS_CoreManager
     {
         if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'lostpassword') {
             if (!is_user_logged_in()) {
-                wp_redirect(site_url('/lost-password/'));
+                wp_redirect(site_url('/lost-password'));
                 exit;
             }
         }
@@ -109,7 +103,7 @@ class VMS_CoreManager
     public function custom_login_redirect(string $redirect_to, string $request, WP_User $user): string
     {
         if (isset($user->roles) && is_array($user->roles)) {
-            return esc_url(home_url('/dashboard/'));
+            return esc_url(home_url('/dashboard'));
         }
         return $redirect_to;
     }
@@ -145,7 +139,7 @@ class VMS_CoreManager
         $reset_url = add_query_arg([
             'key' => $key,
             'login' => rawurlencode($user_login)
-        ], home_url('/password-reset/'));
+        ], home_url('/password-reset'));
 
         $site_name = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
         $user_ip = $_SERVER['REMOTE_ADDR'];
@@ -181,70 +175,32 @@ class VMS_CoreManager
         }
     }
 
-    /**
-     * Validate file uploads
-     */
-    public function validate_file_upload(array $file): array
-    {
-        // Only validate on front-end (not admin or AJAX uploads)
-        if (is_admin() && !wp_doing_ajax()) {
-            return $file;
-        }
-
-        // Optional: check for a hidden field or nonce to ensure it's your plugin's form
-        if (empty($_POST['cw_plugin_upload_nonce']) || !wp_verify_nonce($_POST['cw_plugin_upload_nonce'], 'cw_file_upload')) {
-            return $file;
-        }
-
-        // Validate file type
-        $allowed_types = ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'];
-        $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-
-        if (!in_array($file_ext, $allowed_types, true)) {
-            $file['error'] = __('Invalid file type. Allowed types: PDF, DOC, DOCX, TXT, JPG, PNG.', 'vms');
-        }
-
-        return $file;
-
-        //<input type="hidden" name="cw_plugin_upload_nonce" value="<?php echo esc_attr(wp_create_nonce('cw_file_upload')); ?/>">
-
-}
-
-
-/**
-* Link uploaded files to cases
-*/
-public function link_upload_to_case(array $upload): array
-{
-    if (!empty($_POST['case_id']) && is_numeric($_POST['case_id'])) {
-        $case_id = absint($_POST['case_id']);
-        $attachment_id = attachment_url_to_postid($upload['url']);
-
-        if ($attachment_id) {
-            update_post_meta($attachment_id, '_case_id', $case_id);
-            update_post_meta($attachment_id, '_uploader_id', get_current_user_id());
-        }
+    public function reset_monthly_limits() {
+        global $wpdb;
+        $table = self::$guests_table;
+        $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$table}
+                SET status = 'approved'
+                WHERE status = 'suspended'
+                AND (
+                    YEAR(visit_date) < YEAR(CURDATE())
+                    OR (YEAR(visit_date) = YEAR(CURDATE()) AND MONTH(visit_date) < MONTH(CURDATE()))
+                )"
+            )
+        );
     }
 
-    return $upload;
-}
 
-/**
-* Get MPESA transaction details for a user
-*/
-public function get_mpesa_transaction_details(int $user_id): array
-{
-    global $wpdb;
+    public function reset_yearly_limits() {
+        global $wpdb;
+        $table = self::$guests_table;
+        $wpdb->query(
+            "UPDATE {$table}
+            SET status = 'approved'
+            WHERE status = 'suspended'
+            AND visit_date < DATE_FORMAT(CURDATE(), '%Y-01-01')"
+        );
+    }
 
-    $table_name = $wpdb->prefix . 'mpesa_transactions';
-    $result = $wpdb->get_row(
-    $wpdb->prepare(
-    "SELECT status, amount FROM $table_name WHERE user_id = %d ORDER BY transaction_date DESC LIMIT 1",
-    $user_id
-    ),
-    ARRAY_A
-    );
-
-    return $result ?: ['status' => null, 'amount' => null];
-}
 }

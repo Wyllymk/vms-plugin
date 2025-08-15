@@ -5,127 +5,82 @@
 
 namespace WyllyMk\VMS;
 
-use WP_Error;
-
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
-
 class VMS_Activation
 {
-    /**
-     * Activation tasks
-     */
+    private static $guests_table;
+    private static $guest_visits_table;
+    private static $recip_members_table;
+    private static $recip_clubs_table;
+
     public static function activate(): void
     {
+        global $wpdb;
+
+        self::$guests_table        = $wpdb->prefix . 'vms_guests';
+        self::$guest_visits_table  = $wpdb->prefix . 'vms_guest_visits';
+        self::$recip_members_table = $wpdb->prefix . 'vms_reciprocating_members';
+        self::$recip_clubs_table   = $wpdb->prefix . 'vms_reciprocating_clubs';
+
         self::create_essential_pages();
-        // self::create_database_tables();
+        self::create_database_tables();
+        self::activate_cron_jobs();
         flush_rewrite_rules();
     }
 
-    /**
-     * Deactivation tasks
-     */
     public static function deactivate(): void
     {
+        self::deactivate_cron_jobs();
         flush_rewrite_rules();
     }
 
-    /**
-     * Uninstallation tasks
-     */
     public static function uninstall(): void
     {
-        if (get_option('cyber_wakili_remove_all_data', false)) {
+        if (get_option('vms_remove_all_data', false)) {
             self::remove_plugin_data();
         }
     }
 
-    /**
-     * Create essential pages for the plugin
-     */
     private static function create_essential_pages(): void
     {
         $pages = [
-            [
-                'title' => 'Login',
-                'template' => 'page-templates/page-login.php'
-            ],
-            [
-                'title' => 'Register',
-                'template' => 'page-templates/page-register.php'
-            ],
-            [
-                'title' => 'Lost Password',
-                'template' => 'page-templates/page-lostpassword.php'
-            ],
-            [
-                'title' => 'Password Reset',
-                'template' => 'page-templates/page-password-reset.php'
-            ],
-            [
-                'title' => 'Terms & Conditions'
-            ],
-            [
-                'title' => 'Profile',
-                'template' => 'page-templates/page-profile.php'
-            ],
-            [
-                'title' => 'Dashboard',
-                'template' => 'page-templates/page-dashboard.php'
-            ],
-            [
-                'title' => 'Members',
-                'template' => 'page-templates/page-members.php'
-            ],
-            [
-                'title' => 'Employees',
-                'template' => 'page-templates/page-employees.php'
-            ],
-            [
-                'title' => 'Employee Details',
-                'template' => 'page-templates/page-employee-details.php'
-            ],
-            [
-                'title' => 'Guests',
-                'template' => 'page-templates/page-guests.php'
-            ],
-            [
-                'title' => 'Guest Details',
-                'template' => 'page-templates/page-guest-details.php'
-            ],            
-            [
-                'title' => 'Settings',
-                'template' => 'page-templates/page-settings.php'
-            ]
+            ['title' => 'Login', 'template' => 'page-templates/page-login.php'],
+            ['title' => 'Register', 'template' => 'page-templates/page-register.php'],
+            ['title' => 'Lost Password', 'template' => 'page-templates/page-lostpassword.php'],
+            ['title' => 'Password Reset', 'template' => 'page-templates/page-password-reset.php'],
+            ['title' => 'Terms & Conditions'],
+            ['title' => 'Profile', 'template' => 'page-templates/page-profile.php'],
+            ['title' => 'Dashboard', 'template' => 'page-templates/page-dashboard.php'],
+            ['title' => 'Members', 'template' => 'page-templates/page-members.php'],
+            ['title' => 'Employees', 'template' => 'page-templates/page-employees.php'],
+            ['title' => 'Employee Details', 'template' => 'page-templates/page-employee-details.php'],
+            ['title' => 'Guests', 'template' => 'page-templates/page-guests.php'],
+            ['title' => 'Guest Details', 'template' => 'page-templates/page-guest-details.php'],
+            ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']
         ];
 
         foreach ($pages as $page) {
-            $slug = sanitize_title($page['title']); // Generate slug from title if not provided
+            $slug = sanitize_title($page['title']);
             if (!self::page_exists($slug)) {
                 self::create_page($page['title'], $slug, $page['template'] ?? '');
             }
         }
     }
 
-    /**
-     * Check if a page exists by slug
-     */
     private static function page_exists(string $slug): bool
     {
         return (bool) get_page_by_path($slug);
     }
 
-    /**
-     * Create a new page
-     */
     private static function create_page(string $title, string $slug, string $template = ''): ?int
     {
         $page_id = wp_insert_post([
-            'post_title' => $title,
-            'post_name' => $slug,
-            'post_status' => 'publish',
-            'post_type' => 'page',
+            'post_title'   => $title,
+            'post_name'    => $slug,
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
             'post_content' => ''
         ]);
 
@@ -136,69 +91,166 @@ class VMS_Activation
         return is_wp_error($page_id) ? null : $page_id;
     }
 
-    /**
-     * Create all required database tables
-     */
     private static function create_database_tables(): void
     {
-        self::create_transactions_table();
-        self::create_messages_table();
+        self::create_guests_table();
+        self::create_reciprocating_members_table();
+        self::create_reciprocating_clubs_table();
+        self::create_guest_visits_table();
     }
 
-    /**
-     * Clean up plugin data during uninstall
-     */
+    private static function create_guests_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS " . self::$guests_table . " (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            first_name VARCHAR(255) NOT NULL,
+            last_name VARCHAR(255) NOT NULL,
+            email VARCHAR(255) DEFAULT NULL,
+            phone_number VARCHAR(20) DEFAULT NULL,
+            id_number VARCHAR(100) NOT NULL,
+            host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
+            courtesy VARCHAR(255) DEFAULT NULL,
+            status ENUM('approved','unapproved','suspended','banned') DEFAULT 'approved',
+            receive_emails ENUM('yes', 'no') DEFAULT 'no',
+            receive_messages ENUM('yes', 'no') DEFAULT 'no',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX (host_member_id),
+            INDEX (id_number),
+            INDEX (email),
+            INDEX (phone_number),
+            INDEX (status)
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    private static function create_guest_visits_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS " . self::$guest_visits_table . " (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            guest_id BIGINT(20) UNSIGNED NOT NULL,
+            host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
+            visit_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            sign_in_time DATETIME DEFAULT NULL,
+            sign_out_time DATETIME DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX (guest_id),
+            INDEX (host_member_id),
+            INDEX (visit_date),
+            FOREIGN KEY (guest_id) REFERENCES " . self::$guests_table . " (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    private static function create_reciprocating_members_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS " . self::$recip_members_table . " (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            first_name VARCHAR(255) NOT NULL,
+            last_name VARCHAR(255) NOT NULL,
+            email VARCHAR(255) DEFAULT NULL,
+            phone_number VARCHAR(20) DEFAULT NULL,
+            id_number VARCHAR(100) NOT NULL,
+            reciprocating_member_number VARCHAR(100) NOT NULL,
+            reciprocating_club_id BIGINT(20) UNSIGNED NOT NULL,
+            receive_emails ENUM('yes', 'no') DEFAULT 'no',
+            receive_messages ENUM('yes', 'no') DEFAULT 'no',
+            visit_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX (reciprocating_member_number),
+            INDEX (id_number),
+            INDEX (reciprocating_club_id),
+            INDEX (visit_date),
+            INDEX (email),
+            INDEX (phone_number)
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    private static function create_reciprocating_clubs_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS " . self::$recip_clubs_table . " (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            club_name VARCHAR(255) NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY club_name_unique (club_name)
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    private static function activate_cron_jobs(): void
+    {
+        if (!wp_next_scheduled('reset_daily_guest_limits')) {
+            wp_schedule_event(strtotime('00:00:00'), 'daily', 'reset_daily_guest_limits');
+        }
+        if (!wp_next_scheduled('reset_monthly_guest_limits')) {
+            wp_schedule_event(strtotime('first day of next month 00:00:00'), 'monthly', 'reset_monthly_guest_limits');
+        }
+        if (!wp_next_scheduled('reset_yearly_guest_limits')) {
+            wp_schedule_event(strtotime('January 1 next year 00:00:00'), 'yearly', 'reset_yearly_guest_limits');
+        }
+    }
+
+    private static function deactivate_cron_jobs() {
+        wp_clear_scheduled_hook('reset_daily_guest_limits');
+        wp_clear_scheduled_hook('reset_monthly_guest_limits');
+        wp_clear_scheduled_hook('reset_yearly_guest_limits');
+    }
+
     private static function remove_plugin_data(): void
     {
-        // Remove custom tables
         self::drop_database_tables();
-        
-        // Remove plugin options
-        delete_option('cyber_wakili_remove_all_data');
-        
-        // Remove created pages
+        delete_option('vms_remove_all_data');
         self::remove_created_pages();
     }
 
-    /**
-     * Drop custom database tables
-     */
     private static function drop_database_tables(): void
     {
         global $wpdb;
-        
         $tables = [
-            $wpdb->prefix . 'transactions',
-            $wpdb->prefix . 'mobilesasa_messages'
+            self::$guests_table,
+            self::$recip_members_table,
+            self::$recip_clubs_table
         ];
-        
         foreach ($tables as $table) {
             $wpdb->query("DROP TABLE IF EXISTS $table");
         }
     }
 
-    /**
-     * Remove pages created by the plugin
-     */
     private static function remove_created_pages(): void
     {
         $pages = [
-            'login',
-            'register',
-            'lost-password',
-            'password-reset',
-            'terms-conditions',
-            'profile',
-            'dashboard',
-            'employees',
-            'employee-details',
-            'members',
-            'member-details',
-            'guests',
-            'guest-details',
-            'settings',
+            'login','register','lost-password','password-reset',
+            'terms-conditions','profile','dashboard','employees',
+            'employee-details','members','member-details',
+            'guests','guest-details','settings'
         ];
-        
+
         foreach ($pages as $slug) {
             $page = get_page_by_path($slug);
             if ($page) {

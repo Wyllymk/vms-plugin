@@ -63,8 +63,6 @@ class VMS_FormHandler
         add_action('wp_ajax_update_user_profile', [$this, 'handle_profile_update']);
         add_action('wp_ajax_nopriv_update_user_profile', [$this, 'handle_profile_update']);
 
-        add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
-        add_action('wp_ajax_nopriv_guest_registration', [$this, 'handle_guest_registration']);
     }
 
     /**
@@ -315,103 +313,6 @@ class VMS_FormHandler
                 'role'             => !empty($user_data->roles) ? $user_data->roles[0] : 'guest',
             )
         ));
-    }
-
-    /**
-     * Handle profile update via AJAX
-     */
-    public function handle_guest_registration(): void
-    {
-        $this->verify_ajax_request();
-
-        $guests_error = [];
-        $guests_success = [];
-
-        // Initialize dynamic username and password variables
-        $username_prefix = 'Guest_';
-        $user_pass       = wp_generate_password(); 
-
-        global $wpdb;
-        $last_user_id = $wpdb->get_var("SELECT MAX(ID) FROM {$wpdb->prefix}users");
-        $next_user_id = $last_user_id + 1;
-
-        $user_login = $username_prefix . $next_user_id;
-
-        while (username_exists($user_login)) {
-            $next_user_id++;
-            $user_login = $username_prefix . $next_user_id;
-        }
-
-        $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
-        $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
-        $user_email       = sanitize_email($_POST['email'] ?? '');
-        $user_number      = sanitize_text_field($_POST['phone_number'] ?? '');
-        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
-        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
-
-        if (email_exists($user_email)) {
-            wp_send_json_error([
-                'messages' => ['Email already exists.'],
-            ]);
-        }
-
-        $data = [
-            'user_login' => $user_login,
-            'user_pass'  => $user_pass,
-            'user_email' => $user_email,
-            'role'       => 'guest',
-            'meta_input' => [
-                'first_name'           => $first_name,
-                'last_name'            => $last_name,
-                'phone_number'         => $user_number,
-                'receive_messages'     => $receive_messages,
-                'receive_emails'       => $receive_emails,
-                'registration_status'  => 'active',
-                'guest_status'        => 'Registry Processing',
-                'profile_picture'      => '',
-                'show_admin_bar_front' => 'false',
-            ],
-        ];
-
-        error_log('Guest Registration Data: ' . print_r($data, true)); 
-
-        $user_id = wp_insert_user(wp_slash($data));
-
-        if (is_wp_error($user_id)) {
-            wp_send_json_error([
-                'messages' => [$user_id->get_error_message()],
-            ]);
-        }
-
-        // Send Email to Admin (user ID 1)
-        $subject = 'New Guest Registration';
-        $message = "Hello Admin,\n\nA new guest has registered:\n\nName: {$first_name} {$last_name}\nEmail: {$user_email}\nPhone: {$user_number}\nUsername: {$user_login}\nPassword: {$user_pass}";
-
-        $admin_user_email = get_userdata(1)->user_email;
-        wp_mail($admin_user_email, $subject, $message);
-
-        // Optional: Send welcome email to guest
-        if ($receive_emails === 'yes') {
-            $welcome_subject = 'Your Registration Details';
-            $welcome_message = "Hello {$first_name},\n\nYour account has been created successfully.\n\nUsername: {$user_login}\nPassword: {$user_pass}\n\nThank you for registering!";
-            wp_mail($user_email, $welcome_subject, $welcome_message);
-        }
-
-        // Return success with user data
-        $user = get_userdata($user_id);
-        wp_send_json_success([
-            'messages' => array_merge($guests_success, ['The Guest has been successfully registered.']),
-            'userData' => [
-                'ID'              => $user_id,
-                'first_name'      => $first_name,
-                'last_name'       => $last_name,
-                'display_name'    => $user->display_name,
-                'email'           => $user_email,
-                'phone_number'    => $user_number,
-                'receive_messages'=> $receive_messages,
-                'receive_emails'  => $receive_emails,
-                'avatar'          => get_avatar_url($user_id),
-            ],
-        ]);
-    }
+    }      
+    
 }

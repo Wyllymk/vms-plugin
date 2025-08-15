@@ -84,6 +84,7 @@ final class VMS_Plugin
         VMS_CPTS::get_instance()->init();
         VMS_Roles::get_instance()->init();
         VMS_RestApiManager::get_instance()->init();
+        VMS_Database::get_instance()->init();
     }
 }
 
