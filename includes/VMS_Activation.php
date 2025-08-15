@@ -1,6 +1,9 @@
 <?php
 /**
  * Handles plugin activation, deactivation, and uninstallation tasks
+ *
+ * @package WyllyMk\VMS
+ * @since 1.0.0
  */
 
 namespace WyllyMk\VMS;
@@ -8,22 +11,11 @@ namespace WyllyMk\VMS;
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
+
 class VMS_Activation
 {
-    private static $guests_table;
-    private static $guest_visits_table;
-    private static $recip_members_table;
-    private static $recip_clubs_table;
-
     public static function activate(): void
     {
-        global $wpdb;
-
-        self::$guests_table        = $wpdb->prefix . 'vms_guests';
-        self::$guest_visits_table  = $wpdb->prefix . 'vms_guest_visits';
-        self::$recip_members_table = $wpdb->prefix . 'vms_reciprocating_members';
-        self::$recip_clubs_table   = $wpdb->prefix . 'vms_reciprocating_clubs';
-
         self::create_essential_pages();
         self::create_database_tables();
         self::activate_cron_jobs();
@@ -103,8 +95,9 @@ class VMS_Activation
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS " . self::$guests_table . " (
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
@@ -134,8 +127,9 @@ class VMS_Activation
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS " . self::$guest_visits_table . " (
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             guest_id BIGINT(20) UNSIGNED NOT NULL,
             host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
@@ -148,7 +142,7 @@ class VMS_Activation
             INDEX (guest_id),
             INDEX (host_member_id),
             INDEX (visit_date),
-            FOREIGN KEY (guest_id) REFERENCES " . self::$guests_table . " (id) ON DELETE CASCADE
+            FOREIGN KEY (guest_id) REFERENCES " . VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE) . " (id) ON DELETE CASCADE
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -159,8 +153,9 @@ class VMS_Activation
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS " . self::$recip_members_table . " (
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
@@ -191,8 +186,9 @@ class VMS_Activation
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS " . self::$recip_clubs_table . " (
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             club_name VARCHAR(255) NOT NULL,
             PRIMARY KEY (id),
@@ -205,8 +201,8 @@ class VMS_Activation
 
     private static function activate_cron_jobs(): void
     {
-        if (!wp_next_scheduled('reset_daily_guest_limits')) {
-            wp_schedule_event(strtotime('00:00:00'), 'daily', 'reset_daily_guest_limits');
+        if (!wp_next_scheduled('auto_sign_out_guests_at_midnight')) {
+            wp_schedule_event(strtotime('midnight'), 'daily', 'auto_sign_out_guests_at_midnight');
         }
         if (!wp_next_scheduled('reset_monthly_guest_limits')) {
             wp_schedule_event(strtotime('first day of next month 00:00:00'), 'monthly', 'reset_monthly_guest_limits');
@@ -216,8 +212,9 @@ class VMS_Activation
         }
     }
 
-    private static function deactivate_cron_jobs() {
-        wp_clear_scheduled_hook('reset_daily_guest_limits');
+    private static function deactivate_cron_jobs(): void
+    {
+        wp_clear_scheduled_hook('auto_sign_out_guests_at_midnight');
         wp_clear_scheduled_hook('reset_monthly_guest_limits');
         wp_clear_scheduled_hook('reset_yearly_guest_limits');
     }
@@ -233,9 +230,10 @@ class VMS_Activation
     {
         global $wpdb;
         $tables = [
-            self::$guests_table,
-            self::$recip_members_table,
-            self::$recip_clubs_table
+            VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE)
         ];
         foreach ($tables as $table) {
             $wpdb->query("DROP TABLE IF EXISTS $table");
@@ -245,10 +243,10 @@ class VMS_Activation
     private static function remove_created_pages(): void
     {
         $pages = [
-            'login','register','lost-password','password-reset',
-            'terms-conditions','profile','dashboard','employees',
-            'employee-details','members','member-details',
-            'guests','guest-details','settings'
+            'login', 'register', 'lost-password', 'password-reset',
+            'terms-conditions', 'profile', 'dashboard', 'employees',
+            'employee-details', 'members', 'member-details',
+            'guests', 'guest-details', 'settings'
         ];
 
         foreach ($pages as $slug) {
