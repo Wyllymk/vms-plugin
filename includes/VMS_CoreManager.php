@@ -74,6 +74,9 @@ class VMS_CoreManager
         add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
         add_action('wp_ajax_update_guest', [$this, 'handle_guest_update']);
         add_action('wp_ajax_delete_guest', [$this, 'handle_guest_deletion']);
+        add_action('wp_ajax_register_visit', [$this, 'handle_visit_registration']);
+        add_action('wp_ajax_nopriv_register_visit', [$this, 'handle_visit_registration']);
+
         add_action('wp_ajax_sign_in_guest', [$this, 'handle_sign_in_guest']);
         add_action('wp_ajax_sign_out_guest', [$this, 'handle_sign_out_guest']);
         add_action('auto_sign_out_guests_at_midnight', [$this, 'auto_sign_out_guests']);
@@ -564,6 +567,145 @@ class VMS_CoreManager
     }
 
     /**
+     * Handle visit registration via AJAX
+     */
+    public function handle_visit_registration() 
+    {
+        global $wpdb;
+
+        $guest_id           = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
+        $host_member_id     = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
+        $visit_date         = sanitize_text_field($_POST['visit_date'] ?? '');
+        $courtesy           = sanitize_text_field($_POST['courtesy'] ?? '');
+
+        $errors = [];
+
+        if ($guest_id <= 0) {
+            $errors[] = 'Guest is required';
+        } else {
+            $guest_exists = $wpdb->get_var(
+                $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}vms_guests WHERE id = %d", $guest_id)
+            );
+            if (!$guest_exists) {
+                $errors[] = 'Invalid guest selected';
+            }
+        }
+
+        if (empty($visit_date)) {
+            $errors[] = 'Visit date is required';
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['message' => implode(', ', $errors)]);
+        }
+
+        $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $inserted = $wpdb->insert(
+            $table,
+            [
+                'guest_id'      => $guest_id,
+                'host_member_id'=> $host_member_id,
+                'visit_date'    => $visit_date,
+                'courtesy'      => $courtesy,
+            ],
+            ['%d','%d','%s','%s']
+        );
+
+        if (!$inserted) {
+            wp_send_json_error(['message' => 'Database insert failed']);
+        }
+
+        $visit_id = $wpdb->insert_id;
+        $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
+
+        // --- format fields with your helper functions ---
+        $host_display = 'N/A';
+        if (!empty($visit->host_member_id)) {
+            $host_user = get_userdata($visit->host_member_id);
+            if ($host_user) {
+                $first = get_user_meta($visit->host_member_id, 'first_name', true);
+                $last  = get_user_meta($visit->host_member_id, 'last_name', true);
+                $host_display = (!empty($first) || !empty($last)) ? trim($first . ' ' . $last) : $host_user->user_login;
+            }
+        }
+
+        $status       = self::get_visit_status($visit->visit_date, $visit->sign_in_time, $visit->sign_out_time);
+        $status_class = self::get_status_class($status);
+        $status_text  = self::get_status_text($status);
+
+        wp_send_json_success([
+            'id'            => $visit->id,
+            'host_display'  => $host_display,
+            'visit_date'    => self::format_date($visit->visit_date),
+            'sign_in_time'  => self::format_time($visit->sign_in_time),
+            'sign_out_time' => self::format_time($visit->sign_out_time),
+            'duration'      => self::calculate_duration($visit->sign_in_time, $visit->sign_out_time),
+            'status_class'  => $status_class,
+            'status_text'   => $status_text,
+        ]);
+    }
+
+    public static function format_date($date_string) {
+        if (!$date_string) return 'N/A';
+        return date('M j, Y', strtotime($date_string));
+    }
+
+    public static function format_time($time_string) {
+        if (!$time_string) return 'N/A';
+        return date('g:i A', strtotime($time_string));
+    }
+
+    public static function calculate_duration($sign_in, $sign_out) {
+        if (!$sign_in || !$sign_out) return 'N/A';
+        
+        $in_time = strtotime($sign_in);
+        $out_time = strtotime($sign_out);
+        $diff = $out_time - $in_time;
+        
+        $hours = floor($diff / 3600);
+        $minutes = floor(($diff % 3600) / 60);
+        
+        return sprintf('%dh %dm', $hours, $minutes);
+    }
+
+    // Updated status functions to include "Missed" status
+    public static function get_visit_status($visit_date, $sign_in_time, $sign_out_time) {
+            $current_date = current_time('Y-m-d');
+
+            if (empty($sign_in_time) && !empty($visit_date) && $visit_date < $current_date) {
+                return 'missed';
+            }
+
+            return !empty($sign_out_time) ? 'completed' : 'active';
+    }
+
+    public static function get_status_class($status) {
+        switch ($status) {
+            case 'completed':
+                return 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500';
+            case 'active':
+                return 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-warning-500';
+            case 'missed':
+                return 'bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-500';
+            default:
+                return 'bg-blue-light-50 text-blue-light-500 dark:bg-blue-light-500/15 dark:text-blue-light-500';
+        }
+    }
+
+    public static function get_status_text($status) {
+        switch ($status) {
+            case 'completed':
+                return 'Completed';
+            case 'active':
+                return 'Active';
+            case 'missed':
+                return 'Missed';
+            default:
+                return 'Unknown';
+        }
+    }
+
+    /**
      * Handle guest sign in via AJAX
      */
     public function handle_sign_in_guest(): void
@@ -772,7 +914,6 @@ class VMS_CoreManager
             'guestData' => $guest_data
         ]);
     }
-
 
     /**
      * Automatically sign out guests at midnight for the current day

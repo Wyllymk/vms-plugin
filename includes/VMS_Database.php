@@ -45,12 +45,6 @@ class VMS_Database
             error_log('VMS_Database: VMS_Config class not found. Ensure config.php is included.');
             return;
         }
-
-        // Register AJAX handlers
-        add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
-        add_action('wp_ajax_nopriv_guest_registration', [$this, 'handle_guest_registration']);
-        add_action('wp_ajax_sign_in_guest', [$this, 'handle_sign_in_guest']);
-        add_action('wp_ajax_sign_out_guest', [$this, 'handle_sign_out_guest']);
     }
 
     /**
