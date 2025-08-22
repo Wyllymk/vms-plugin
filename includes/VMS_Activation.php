@@ -96,29 +96,26 @@ class VMS_Activation
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
         $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
             email VARCHAR(255) DEFAULT NULL,
             phone_number VARCHAR(20) DEFAULT NULL,
-            id_number VARCHAR(100) NOT NULL,
-            host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
-            courtesy VARCHAR(255) DEFAULT NULL,
+            id_number VARCHAR(100) NOT NULL UNIQUE,
             status ENUM('approved','unapproved','suspended','banned') DEFAULT 'approved',
+            guest_status ENUM('active','suspended','banned') DEFAULT 'active',
             receive_emails ENUM('yes', 'no') DEFAULT 'no',
             receive_messages ENUM('yes', 'no') DEFAULT 'no',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            INDEX (host_member_id),
-            INDEX (id_number),
+            UNIQUE KEY unique_id_number (id_number),
             INDEX (email),
             INDEX (phone_number),
-            INDEX (status)
+            INDEX (status),
+            INDEX (guest_status)
         ) ENGINE=InnoDB $charset_collate;";
-
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
@@ -128,12 +125,13 @@ class VMS_Activation
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             guest_id BIGINT(20) UNSIGNED NOT NULL,
             host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
-            visit_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            courtesy VARCHAR(255) DEFAULT NULL,
+            visit_date DATE NOT NULL,
             sign_in_time DATETIME DEFAULT NULL,
             sign_out_time DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -142,9 +140,11 @@ class VMS_Activation
             INDEX (guest_id),
             INDEX (host_member_id),
             INDEX (visit_date),
-            FOREIGN KEY (guest_id) REFERENCES " . VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE) . " (id) ON DELETE CASCADE
+            INDEX (sign_in_time),
+            INDEX (sign_out_time),
+            FOREIGN KEY (guest_id) REFERENCES $guests_table (id) ON DELETE CASCADE,
+            CONSTRAINT unique_guest_visit_date UNIQUE (guest_id, host_member_id, visit_date)
         ) ENGINE=InnoDB $charset_collate;";
-
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
@@ -162,6 +162,7 @@ class VMS_Activation
             email VARCHAR(255) DEFAULT NULL,
             phone_number VARCHAR(20) DEFAULT NULL,
             id_number VARCHAR(100) NOT NULL,
+            member_status ENUM('active','suspended','banned') DEFAULT 'active',
             reciprocating_member_number VARCHAR(100) NOT NULL,
             reciprocating_club_id BIGINT(20) UNSIGNED NOT NULL,
             receive_emails ENUM('yes', 'no') DEFAULT 'no',

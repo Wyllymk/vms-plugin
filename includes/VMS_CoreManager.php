@@ -72,6 +72,8 @@ class VMS_CoreManager
     private function setup_guest_management_hooks(): void
     {
         add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
+        add_action('wp_ajax_update_guest', [$this, 'handle_guest_update']);
+        add_action('wp_ajax_delete_guest', [$this, 'handle_guest_deletion']);
         add_action('wp_ajax_sign_in_guest', [$this, 'handle_sign_in_guest']);
         add_action('wp_ajax_sign_out_guest', [$this, 'handle_sign_out_guest']);
         add_action('auto_sign_out_guests_at_midnight', [$this, 'auto_sign_out_guests']);
@@ -184,42 +186,62 @@ class VMS_CoreManager
     }
 
     /**
-     * Calculate guest status based on visit limits
+     * Calculate guest status based on guest_status and visit limits
      */
     private function calculate_guest_status(int $guest_id, int $host_member_id, string $visit_date): string
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-
+        
+        // First, check the guest_status field - this takes precedence
+        $guest_status = $wpdb->get_var($wpdb->prepare(
+            "SELECT guest_status FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
+        
+        // If guest_status is not 'active', return the corresponding status
+        if ($guest_status !== 'active') {
+            // Map guest_status to status field
+            switch ($guest_status) {
+                case 'suspended':
+                    return 'suspended';
+                case 'banned':
+                    return 'banned';
+                default:
+                    return 'suspended'; // fallback for any non-active status
+            }
+        }
+        
+        // Only if guest_status is 'active', proceed with the limit checks
         // Daily limit check for host
         $daily_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $guest_visits_table 
+            "SELECT COUNT(*) FROM $guest_visits_table
             WHERE host_member_id = %d AND DATE(visit_date) = %s",
             $host_member_id, $visit_date
         ));
-
+        
         // Monthly limit check for guest
         $monthly_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $guest_visits_table 
+            "SELECT COUNT(*) FROM $guest_visits_table
             WHERE guest_id = %d AND MONTH(visit_date) = MONTH(%s) AND YEAR(visit_date) = YEAR(%s)",
             $guest_id, $visit_date, $visit_date
         ));
-
+        
         // Yearly limit check for guest
         $yearly_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $guest_visits_table 
+            "SELECT COUNT(*) FROM $guest_visits_table
             WHERE guest_id = %d AND YEAR(visit_date) = YEAR(%s)",
             $guest_id, $visit_date
         ));
-
-        // Determine status based on limits
+        
+        // Determine status based on limits (only when guest_status is 'active')
         if ($daily_count >= 4) {
             return 'unapproved';
         } elseif ($monthly_count >= 4 || $yearly_count >= 24) {
             return 'suspended';
         }
-
+        
         return 'approved';
     }
 
@@ -228,31 +250,46 @@ class VMS_CoreManager
      */
     public function handle_guest_registration(): void
     {
-        // Assume verify_ajax_request is defined elsewhere
         $this->verify_ajax_request();
 
-        global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $errors = [];
+
+        // Sanitize input
+        $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
+        $email            = sanitize_email($_POST['email'] ?? '');
+        $phone_number     = sanitize_text_field($_POST['phone_number'] ?? '');
+        $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
+        $host_member_id   = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
+        $visit_date       = sanitize_text_field($_POST['visit_date'] ?? '');
+        $courtesy         = sanitize_textarea_field($_POST['courtesy'] ?? '');
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
 
         // Validate required fields
-        $required_fields = ['first_name', 'last_name', 'id_number', 'host_member_id', 'visit_date'];
-        $errors = [];
-        foreach ($required_fields as $field) {
-            if (empty($_POST[$field])) {
-                $errors[] = ucfirst(str_replace('_', ' ', $field)) . ' is required';
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($id_number)) $errors[] = 'ID number is required';
+        if (empty($host_member_id)) $errors[] = 'Host member is required';
+
+        // Validate date format and ensure it's not in the past
+        if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
+            $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
+        } else {
+            $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
+            $current_date = new \DateTime(current_time('Y-m-d'));
+            
+            if (!$visit_date_obj || $visit_date_obj < $current_date) {
+                $errors[] = 'Visit date cannot be in the past';
             }
         }
 
-        // Validate email if provided
-        if (!empty($_POST['email']) && !is_email($_POST['email'])) {
-            $errors[] = 'Invalid email address';
-        }
-
-        // Validate host member
-        $host_member_id = absint($_POST['host_member_id']);
-        if ($host_member_id && !get_user_by('ID', $host_member_id)) {
-            $errors[] = 'Invalid host member';
+        // Validate host member exists
+        $host_member = $host_member_id ? get_user_by('id', $host_member_id) : null;
+        if ($host_member_id && !$host_member) {
+            $errors[] = 'Invalid host member selected';
         }
 
         if (!empty($errors)) {
@@ -260,75 +297,269 @@ class VMS_CoreManager
             return;
         }
 
-        // Sanitize input
-        $guest_data = [
-            'first_name'       => sanitize_text_field($_POST['first_name']),
-            'last_name'        => sanitize_text_field($_POST['last_name']),
-            'email'            => !empty($_POST['email']) ? sanitize_email($_POST['email']) : null,
-            'phone_number'     => !empty($_POST['phone_number']) ? sanitize_text_field($_POST['phone_number']) : null,
-            'id_number'        => sanitize_text_field($_POST['id_number']),
-            'host_member_id'   => $host_member_id,
-            'courtesy'         => !empty($_POST['courtesy']) ? sanitize_text_field($_POST['courtesy']) : null,
-            'receive_emails'   => !empty($_POST['receive_emails']) && $_POST['receive_emails'] === 'yes' ? 'yes' : 'no',
-            'receive_messages' => !empty($_POST['receive_messages']) && $_POST['receive_messages'] === 'yes' ? 'yes' : 'no',
-        ];
+        global $wpdb;
 
-        // Insert guest
-        $inserted = $wpdb->insert($guests_table, $guest_data, [
-            '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'
-        ]);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
-        if ($inserted === false) {
-            wp_send_json_error(['messages' => ['Failed to register guest']]);
+        // Check if guest already exists by ID number
+        $existing_guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, status, guest_status FROM $guests_table WHERE id_number = %s",
+            $id_number
+        ));
+
+        if ($existing_guest) {
+            $guest_id = $existing_guest->id;
+
+            // Update existing guest info (but don't change guest_status - that's manual)
+            $wpdb->update(
+                $guests_table,
+                [
+                    'first_name'       => $first_name,
+                    'last_name'        => $last_name,
+                    'email'            => $email,
+                    'phone_number'     => $phone_number,
+                    'receive_emails'   => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                ],
+                ['id' => $guest_id],
+                ['%s', '%s', '%s', '%s', '%s', '%s'],
+                ['%d']
+            );
+        } else {
+            // Create new guest
+            $wpdb->insert(
+                $guests_table,
+                [
+                    'first_name'       => $first_name,
+                    'last_name'        => $last_name,
+                    'email'            => $email,
+                    'phone_number'     => $phone_number,
+                    'id_number'        => $id_number,
+                    'receive_emails'   => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                    'status'           => 'approved',
+                    'guest_status'     => 'active'
+                ],
+                ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+            );
+            $guest_id = $wpdb->insert_id;
+        }
+
+        if (!$guest_id) {
+            wp_send_json_error(['messages' => ['Failed to create or update guest record']]);
             return;
         }
 
-        $guest_id = $wpdb->insert_id;
-
-        // Calculate guest status
-        $visit_date = sanitize_text_field($_POST['visit_date']);
-        $guest_status = $this->calculate_guest_status($guest_id, $host_member_id, $visit_date);
+        // Check guest limits and determine status
+        $visit_date_mysql = date('Y-m-d', strtotime($visit_date));
+        $status = $this->calculate_guest_status($guest_id, $host_member_id, $visit_date_mysql);
 
         // Update guest status
         $wpdb->update(
             $guests_table,
-            ['status' => $guest_status],
+            ['status' => $status],
             ['id' => $guest_id],
             ['%s'],
             ['%d']
         );
 
-        // Insert guest visit
-        $visit_data = [
-            'guest_id'       => $guest_id,
-            'host_member_id' => $host_member_id,
-            'visit_date'     => $visit_date,
-        ];
-
-        $inserted_visit = $wpdb->insert($guest_visits_table, $visit_data, ['%d', '%d', '%s']);
-
-        if ($inserted_visit === false) {
-            // Rollback guest insertion
-            $wpdb->delete($guests_table, ['id' => $guest_id], ['%d']);
-            wp_send_json_error(['messages' => ['Failed to create guest visit']]);
+        // Check if guest can visit (banned guests cannot visit at all)
+        if ($status === 'banned') {
+            wp_send_json_error(['messages' => ['This guest is banned and cannot visit']]);
             return;
         }
 
-        $visit_id = $wpdb->insert_id;
+        // Add visit record
+        $visit_result = $wpdb->insert(
+            $guest_visits_table,
+            [
+                'guest_id'       => $guest_id,
+                'host_member_id' => $host_member_id,
+                'visit_date'     => $visit_date_mysql,
+                'courtesy'       => $courtesy
+            ],
+            ['%d', '%d', '%s', '%s']
+        );
 
-        // Prepare response data
-        $host_member = get_user_by('id', $host_member_id);
-        $guest_data['id'] = $guest_id;
-        $guest_data['status'] = $guest_status;
-        $guest_data['host_name'] = $host_member ? $host_member->display_name : 'N/A';
-        $guest_data['visit_date'] = $visit_date;
-        $guest_data['sign_in_time'] = null;
-        $guest_data['sign_out_time'] = null;
-        $guest_data['visit_id'] = $visit_id;
+        if ($visit_result === false) {
+            wp_send_json_error(['messages' => ['Failed to create visit record']]);
+            return;
+        }
+
+        // Get the final guest_status for response
+        $final_guest_data = $wpdb->get_row($wpdb->prepare(
+            "SELECT guest_status FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
+
+        // Prepare guest data for response
+        $guest_data = [
+            'id'              => $guest_id,
+            'first_name'      => $first_name,
+            'last_name'       => $last_name,
+            'email'           => $email,
+            'phone_number'    => $phone_number,
+            'id_number'       => $id_number,
+            'host_member_id'  => $host_member_id,
+            'host_name'       => $host_member ? $host_member->display_name : 'N/A',
+            'visit_date'      => $visit_date_mysql,
+            'courtesy'        => $courtesy,
+            'receive_emails'  => $receive_emails,
+            'receive_messages' => $receive_messages,
+            'status'          => $status,
+            'guest_status'    => $final_guest_data->guest_status ?? 'active',
+            'sign_in_time'    => null,
+            'sign_out_time'   => null,
+            'visit_id'        => $wpdb->insert_id
+        ];
 
         wp_send_json_success([
             'messages' => ['Guest registered successfully'],
             'guestData' => $guest_data
+        ]);
+    }
+
+    // Handle guest update via AJAX
+    function handle_guest_update() 
+    {
+        // Verify nonce
+        $this->verify_ajax_request();
+
+        error_log('Handle guest update');
+
+        $errors = [];
+
+        // Sanitize input
+        $guest_id         = sanitize_text_field($_POST['guest_id'] ?? '');
+        $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
+        $email            = sanitize_email($_POST['email'] ?? '');
+        $phone_number     = sanitize_text_field($_POST['phone_number'] ?? '');
+        $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
+        $courtesy         = sanitize_textarea_field($_POST['courtesy'] ?? '');
+        $guest_status     = sanitize_text_field($_POST['guest_status'] ?? 'active');
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
+
+        // Validate required fields
+        if (empty($guest_id)) $errors[] = 'Guest ID is required';
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($id_number)) $errors[] = 'ID number is required';
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+            return;
+        }
+
+        global $wpdb;
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Check if guest exists
+        $existing_guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
+
+        if (!$existing_guest) {
+            wp_send_json_error(['messages' => ['Guest not found']]);
+            return;
+        }
+
+        // Check if ID number is already used by another guest
+        $id_number_exists = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $guests_table WHERE id_number = %s AND id != %d",
+            $id_number, $guest_id
+        ));
+
+        if ($id_number_exists) {
+            wp_send_json_error(['messages' => ['ID number is already in use by another guest']]);
+            return;
+        }
+
+        // Update guest
+        $result = $wpdb->update(
+            $guests_table,
+            [
+                'first_name'       => $first_name,
+                'last_name'        => $last_name,
+                'email'            => $email,
+                'phone_number'     => $phone_number,
+                'id_number'        => $id_number,
+                'guest_status'     => $guest_status,
+                'receive_messages' => $receive_messages,
+                'receive_emails'   => $receive_emails,
+                'updated_at'       => current_time('mysql')
+            ],
+            ['id' => $guest_id],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to update guest record']]);
+            return;
+        }
+
+        wp_send_json_success([
+            'message' => 'Guest updated successfully'
+        ]);
+    }
+
+    // Handle guest deletion via AJAX
+    function handle_guest_deletion() 
+    {
+        // Verify nonce
+        $this->verify_ajax_request();
+
+        $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
+
+        error_log($guest_id);
+
+        if (empty($guest_id)) {
+            wp_send_json_error(['messages' => ['Guest ID is required']]);
+            return;
+        }
+
+        global $wpdb;
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+
+        // Check if guest exists
+        $existing_guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
+
+        if (!$existing_guest) {
+            wp_send_json_error(['messages' => ['Guest not found']]);
+            return;
+        }
+
+        // First delete all guest visits
+        $wpdb->delete(
+            $visits_table,
+            ['guest_id' => $guest_id],
+            ['%d']
+        );
+
+        // Then delete the guest
+        $result = $wpdb->delete(
+            $guests_table,
+            ['id' => $guest_id],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to delete guest record']]);
+            return;
+        }
+
+        wp_send_json_success([
+            'message' => 'Guest deleted successfully'
         ]);
     }
 
@@ -378,15 +609,28 @@ class VMS_CoreManager
 
         // Re-evaluate guest status
         $guest_status = $this->calculate_guest_status($visit->guest_id, $visit->host_member_id, $visit->visit_date);
+        
+        // Update the guest status in the database
+        $wpdb->update(
+            $guests_table,
+            ['status' => $guest_status],
+            ['id' => $visit->guest_id],
+            ['%s'],
+            ['%d']
+        );
+
+        // Check if guest can sign in (banned or suspended guests cannot sign in)
         if ($guest_status === 'banned' || $guest_status === 'suspended') {
-            $wpdb->update(
-                $guests_table,
-                ['status' => $guest_status],
-                ['id' => $visit->guest_id],
-                ['%s'],
-                ['%d']
-            );
             wp_send_json_error(['messages' => ['Guest access is restricted due to status: ' . $guest_status]]);
+            return;
+        }
+
+        // Check if visit date is today (guests can only sign in on their visit date)
+        $current_date = current_time('Y-m-d');
+        $visit_date = date('Y-m-d', strtotime($visit->visit_date));
+        
+        if ($visit_date !== $current_date) {
+            wp_send_json_error(['messages' => ['Guest can only sign in on their scheduled visit date']]);
             return;
         }
 
@@ -423,6 +667,7 @@ class VMS_CoreManager
             'receive_emails'  => $guest->receive_emails,
             'receive_messages' => $guest->receive_messages,
             'status'          => $guest_status,
+            'guest_status'    => $guest->guest_status,
             'sign_in_time'    => current_time('mysql'),
             'sign_out_time'   => null,
             'visit_id'        => $visit_id
@@ -516,6 +761,7 @@ class VMS_CoreManager
             'receive_emails'  => $guest->receive_emails,
             'receive_messages' => $guest->receive_messages,
             'status'          => $guest->status,
+            'guest_status'    => $guest->guest_status,
             'sign_in_time'    => $visit->sign_in_time,
             'sign_out_time'   => current_time('mysql'),
             'visit_id'        => $visit_id
@@ -526,6 +772,7 @@ class VMS_CoreManager
             'guestData' => $guest_data
         ]);
     }
+
 
     /**
      * Automatically sign out guests at midnight for the current day
@@ -584,40 +831,38 @@ class VMS_CoreManager
         }
     }
 
+
     /**
-     * Reset monthly guest limits
+     * Reset monthly guest limits (only for automatically suspended guests)
      */
     public function reset_monthly_limits()
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
+        // Only reset status for guests who are automatically suspended but have active guest_status
         $wpdb->query(
-            $wpdb->prepare(
-                "UPDATE $guests_table
-                SET status = 'approved'
-                WHERE status = 'suspended'
-                AND (
-                    YEAR(visit_date) < YEAR(CURDATE())
-                    OR (YEAR(visit_date) = YEAR(CURDATE()) AND MONTH(visit_date) < MONTH(CURDATE()))
-                )"
-            )
+            "UPDATE $guests_table
+            SET status = 'approved'
+            WHERE status = 'suspended'
+            AND guest_status = 'active'"
         );
     }
 
     /**
-     * Reset yearly guest limits
+     * Reset yearly guest limits (only for automatically suspended guests)
      */
     public function reset_yearly_limits()
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
+        // Only reset status for guests who are automatically suspended but have active guest_status
         $wpdb->query(
             "UPDATE $guests_table
             SET status = 'approved'
             WHERE status = 'suspended'
-            AND visit_date < DATE_FORMAT(CURDATE(), '%Y-01-01')"
+            AND guest_status = 'active'"
         );
     }
 
