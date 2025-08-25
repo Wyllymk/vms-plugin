@@ -610,19 +610,25 @@ class VMS_CoreManager
     }
 
     /**
+     * The function `handle_visit_registration` handles the registration of visits, validates input data,
+     * inserts visit records into the database, and returns JSON responses based on the success or failure
+     * of the operation.
+     */
+    /**
      * Handle visit registration via AJAX
      */
     public function handle_visit_registration() 
     {
         global $wpdb;
 
-        $guest_id           = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
-        $host_member_id     = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
-        $visit_date         = sanitize_text_field($_POST['visit_date'] ?? '');
-        $courtesy           = sanitize_text_field($_POST['courtesy'] ?? '');
+        $guest_id       = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
+        $host_member_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
+        $visit_date     = sanitize_text_field($_POST['visit_date'] ?? '');
+        $courtesy       = sanitize_text_field($_POST['courtesy'] ?? '');
 
         $errors = [];
 
+        // Validate guest
         if ($guest_id <= 0) {
             $errors[] = 'Guest is required';
         } else {
@@ -634,24 +640,40 @@ class VMS_CoreManager
             }
         }
 
+        // Validate visit date
         if (empty($visit_date)) {
             $errors[] = 'Visit date is required';
+        }
+
+        // Check for duplicate visit
+        $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        if (!empty($guest_id) && !empty($visit_date)) {
+            $existing = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$table} WHERE guest_id = %d AND visit_date = %s",
+                    $guest_id,
+                    $visit_date
+                )
+            );
+            if ($existing) {
+                $errors[] = 'This guest already has a visit registered on this date';
+            }
         }
 
         if (!empty($errors)) {
             wp_send_json_error(['message' => implode(', ', $errors)]);
         }
 
-        $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        // Insert visit
         $inserted = $wpdb->insert(
             $table,
             [
-                'guest_id'      => $guest_id,
-                'host_member_id'=> $host_member_id,
-                'visit_date'    => $visit_date,
-                'courtesy'      => $courtesy,
+                'guest_id'       => $guest_id,
+                'host_member_id' => $host_member_id,
+                'visit_date'     => $visit_date,
+                'courtesy'       => $courtesy,
             ],
-            ['%d','%d','%s','%s']
+            ['%d', '%d', '%s', '%s']
         );
 
         if (!$inserted) {
@@ -661,7 +683,7 @@ class VMS_CoreManager
         $visit_id = $wpdb->insert_id;
         $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
 
-        // --- format fields with your helper functions ---
+        // Format host display name
         $host_display = 'N/A';
         if (!empty($visit->host_member_id)) {
             $host_user = get_userdata($visit->host_member_id);
@@ -687,6 +709,7 @@ class VMS_CoreManager
             'status_text'   => $status_text,
         ]);
     }
+
 
     public static function get_guests_by_host($host_member_id) {
         global $wpdb;
