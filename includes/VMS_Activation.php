@@ -96,26 +96,28 @@ class VMS_Activation
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+
+        $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
             email VARCHAR(255) DEFAULT NULL,
             phone_number VARCHAR(20) DEFAULT NULL,
-            id_number VARCHAR(100) NOT NULL UNIQUE,
+            id_number VARCHAR(100) NOT NULL,
             status ENUM('approved','unapproved','suspended','banned') DEFAULT 'approved',
             guest_status ENUM('active','suspended','banned') DEFAULT 'active',
-            receive_emails ENUM('yes', 'no') DEFAULT 'no',
-            receive_messages ENUM('yes', 'no') DEFAULT 'no',
+            receive_emails ENUM('yes','no') DEFAULT 'no',
+            receive_messages ENUM('yes','no') DEFAULT 'no',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
+            PRIMARY KEY  (id),
             UNIQUE KEY unique_id_number (id_number),
-            INDEX (email),
-            INDEX (phone_number),
-            INDEX (status),
-            INDEX (guest_status)
+            KEY email (email),
+            KEY phone_number (phone_number),
+            KEY status (status),
+            KEY guest_status (guest_status)
         ) ENGINE=InnoDB $charset_collate;";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
@@ -126,7 +128,8 @@ class VMS_Activation
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+
+        $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             guest_id BIGINT(20) UNSIGNED NOT NULL,
             host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
@@ -136,15 +139,16 @@ class VMS_Activation
             sign_out_time DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            INDEX (guest_id),
-            INDEX (host_member_id),
-            INDEX (visit_date),
-            INDEX (sign_in_time),
-            INDEX (sign_out_time),
-            FOREIGN KEY (guest_id) REFERENCES $guests_table (id) ON DELETE CASCADE,
-            CONSTRAINT unique_guest_visit_date UNIQUE (guest_id, host_member_id, visit_date)
+            PRIMARY KEY  (id),
+            KEY guest_id (guest_id),
+            KEY host_member_id (host_member_id),
+            KEY visit_date (visit_date),
+            KEY sign_in_time (sign_in_time),
+            KEY sign_out_time (sign_out_time),
+            UNIQUE KEY unique_guest_visit_date (guest_id, host_member_id, visit_date),
+            CONSTRAINT fk_guest FOREIGN KEY (guest_id) REFERENCES $guests_table (id) ON DELETE CASCADE
         ) ENGINE=InnoDB $charset_collate;";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
@@ -155,7 +159,7 @@ class VMS_Activation
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
@@ -165,23 +169,24 @@ class VMS_Activation
             member_status ENUM('active','suspended','banned') DEFAULT 'active',
             reciprocating_member_number VARCHAR(100) NOT NULL,
             reciprocating_club_id BIGINT(20) UNSIGNED NOT NULL,
-            receive_emails ENUM('yes', 'no') DEFAULT 'no',
-            receive_messages ENUM('yes', 'no') DEFAULT 'no',
+            receive_emails ENUM('yes','no') DEFAULT 'no',
+            receive_messages ENUM('yes','no') DEFAULT 'no',
             visit_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            INDEX (reciprocating_member_number),
-            INDEX (id_number),
-            INDEX (reciprocating_club_id),
-            INDEX (visit_date),
-            INDEX (email),
-            INDEX (phone_number)
+            PRIMARY KEY  (id),
+            KEY reciprocating_member_number (reciprocating_member_number),
+            KEY id_number (id_number),
+            KEY reciprocating_club_id (reciprocating_club_id),
+            KEY visit_date (visit_date),
+            KEY email (email),
+            KEY phone_number (phone_number)
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
+
 
     private static function create_reciprocating_clubs_table(): void
     {
