@@ -78,6 +78,7 @@ class VMS_CoreManager
 
         add_action('wp_ajax_sign_in_guest', [$this, 'handle_sign_in_guest']);
         add_action('wp_ajax_sign_out_guest', [$this, 'handle_sign_out_guest']);
+        add_action('auto_update_visit_status_at_midnight', [$this, 'auto_update_visit_statuses']);
         add_action('auto_sign_out_guests_at_midnight', [$this, 'auto_sign_out_guests']);
         add_action('reset_monthly_guest_limits', [$this, 'reset_monthly_limits']);
         add_action('reset_yearly_guest_limits', [$this, 'reset_yearly_limits']);
@@ -293,8 +294,9 @@ class VMS_CoreManager
     public function handle_guest_registration(): void
     {
         $this->verify_ajax_request();
-
         error_log('Handle guest registration');
+
+        global $wpdb;
 
         $errors = [];
 
@@ -318,13 +320,12 @@ class VMS_CoreManager
         if (empty($id_number)) $errors[] = 'ID number is required';
         if (empty($host_member_id)) $errors[] = 'Host member is required';
 
-        // Validate date format and ensure it's not in the past
+        // Validate visit date format
         if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
             $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
         } else {
             $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
             $current_date = new \DateTime(current_time('Y-m-d'));
-            
             if (!$visit_date_obj || $visit_date_obj < $current_date) {
                 $errors[] = 'Visit date cannot be in the past';
             }
@@ -341,8 +342,7 @@ class VMS_CoreManager
             return;
         }
 
-        global $wpdb;
-
+        // Tables
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
@@ -354,8 +354,7 @@ class VMS_CoreManager
 
         if ($existing_guest) {
             $guest_id = $existing_guest->id;
-
-            // Update existing guest info (but don't change guest_status - that's manual)
+            // Update guest info (excluding guest_status)
             $wpdb->update(
                 $guests_table,
                 [
@@ -370,8 +369,6 @@ class VMS_CoreManager
                 ['%s', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
-
-
         } else {
             // Create new guest
             $wpdb->insert(
@@ -387,7 +384,7 @@ class VMS_CoreManager
                     'status'           => 'approved',
                     'guest_status'     => 'active'
                 ],
-                ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+                ['%s','%s','%s','%s','%s','%s','%s','%s','%s']
             );
             $guest_id = $wpdb->insert_id;
         }
@@ -397,35 +394,61 @@ class VMS_CoreManager
             return;
         }
 
-        // Check guest limits and determine status
-        $visit_date_mysql = date('Y-m-d', strtotime($visit_date));
-        $status = $this->calculate_guest_status($guest_id, $host_member_id, $visit_date_mysql);
-
-        // Update guest status
-        $wpdb->update(
-            $guests_table,
-            ['status' => $status],
-            ['id' => $guest_id],
-            ['%s'],
-            ['%d']
-        );
-
-        // Check if guest can visit (banned guests cannot visit at all)
-        if ($status === 'banned') {
-            wp_send_json_error(['messages' => ['This guest is banned and cannot visit']]);
+        // Prevent duplicate visit on the same date
+        $existing_visit = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table WHERE guest_id = %d AND visit_date = %s",
+            $guest_id,
+            $visit_date
+        ));
+        if ($existing_visit) {
+            wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
             return;
         }
 
-        // Add visit record
+        // Calculate monthly and yearly visits (only counting actual sign-ins)
+        $month_start = date('Y-m-01', strtotime($visit_date));
+        $month_end   = date('Y-m-t', strtotime($visit_date));
+        $year_start  = date('Y-01-01', strtotime($visit_date));
+        $year_end    = date('Y-12-31', strtotime($visit_date));
+
+        $monthly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table 
+            WHERE guest_id = %d AND visit_date BETWEEN %s AND %s 
+            AND sign_in_time IS NOT NULL",
+            $guest_id, $month_start, $month_end
+        ));
+
+        $yearly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table 
+            WHERE guest_id = %d AND visit_date BETWEEN %s AND %s 
+            AND sign_in_time IS NOT NULL",
+            $guest_id, $year_start, $year_end
+        ));
+
+        // Check monthly/yearly limits
+        $monthly_limit = 4;
+        $yearly_limit  = 12;
+
+        if ($monthly_visits >= $monthly_limit) {
+            wp_send_json_error(['messages' => ['This guest has reached the monthly visit limit']]);
+            return;
+        }
+
+        if ($yearly_visits >= $yearly_limit) {
+            wp_send_json_error(['messages' => ['This guest has reached the yearly visit limit']]);
+            return;
+        }
+
+        // Insert visit record
         $visit_result = $wpdb->insert(
             $guest_visits_table,
             [
                 'guest_id'       => $guest_id,
                 'host_member_id' => $host_member_id,
-                'visit_date'     => $visit_date_mysql,
+                'visit_date'     => $visit_date,
                 'courtesy'       => $courtesy
             ],
-            ['%d', '%d', '%s', '%s']
+            ['%d','%d','%s','%s']
         );
 
         if ($visit_result === false) {
@@ -433,13 +456,13 @@ class VMS_CoreManager
             return;
         }
 
-        // Get the final guest_status for response
+        // Fetch final guest status
         $final_guest_data = $wpdb->get_row($wpdb->prepare(
             "SELECT guest_status FROM $guests_table WHERE id = %d",
             $guest_id
         ));
 
-        // Prepare guest data for response
+        // Prepare guest data for JS
         $guest_data = [
             'id'              => $guest_id,
             'first_name'      => $first_name,
@@ -449,11 +472,11 @@ class VMS_CoreManager
             'id_number'       => $id_number,
             'host_member_id'  => $host_member_id,
             'host_name'       => $host_member ? $host_member->display_name : 'N/A',
-            'visit_date'      => $visit_date_mysql,
+            'visit_date'      => $visit_date,
             'courtesy'        => $courtesy,
             'receive_emails'  => $receive_emails,
-            'receive_messages' => $receive_messages,
-            'status'          => $status,
+            'receive_messages'=> $receive_messages,
+            'status'          => $existing_guest->status ?? 'approved',
             'guest_status'    => $final_guest_data->guest_status ?? 'active',
             'sign_in_time'    => null,
             'sign_out_time'   => null,
@@ -461,8 +484,147 @@ class VMS_CoreManager
         ];
 
         wp_send_json_success([
-            'messages' => ['Guest registered successfully'],
+            'messages'  => ['Guest registered successfully'],
             'guestData' => $guest_data
+        ]);
+    }
+
+    /**
+     * The function `handle_visit_registration` handles the registration of visits, validates input data,
+     * inserts visit records into the database, and returns JSON responses based on the success or failure
+     * of the operation.
+     */
+    /**
+     * Handle visit registration via AJAX
+     */
+    public function handle_visit_registration() 
+    {
+        global $wpdb;
+
+        $guest_id       = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
+        $host_member_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
+        $visit_date     = sanitize_text_field($_POST['visit_date'] ?? '');
+        $courtesy       = sanitize_text_field($_POST['courtesy'] ?? '');
+
+        $errors = [];
+
+        // Validate guest
+        if ($guest_id <= 0) {
+            $errors[] = 'Guest is required';
+        } else {
+            $guest_exists = $wpdb->get_var(
+                $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}vms_guests WHERE id = %d", $guest_id)
+            );
+            if (!$guest_exists) {
+                $errors[] = 'Invalid guest selected';
+            }
+        }
+
+        // Validate host
+        if ($host_member_id) {
+            $host_user = get_userdata($host_member_id);
+            if (!$host_user) {
+                $errors[] = 'Invalid host member selected';
+            }
+        }
+
+        // Validate visit date
+        if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
+            $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
+        } else {
+            $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
+            $current_date   = new \DateTime(current_time('Y-m-d'));
+            if (!$visit_date_obj || $visit_date_obj < $current_date) {
+                $errors[] = 'Visit date cannot be in the past';
+            }
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+        }
+
+        $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+
+        // Prevent duplicate visit on same date
+        $existing_visit = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE guest_id = %d AND visit_date = %s",
+            $guest_id,
+            $visit_date
+        ));
+        if ($existing_visit) {
+            wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
+        }
+
+        // Monthly and yearly limits: count only visits that were actually signed in
+        $month_start = date('Y-m-01', strtotime($visit_date));
+        $month_end   = date('Y-m-t', strtotime($visit_date));
+        $year_start  = date('Y-01-01', strtotime($visit_date));
+        $year_end    = date('Y-12-31', strtotime($visit_date));
+
+        $monthly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE guest_id = %d AND visit_date BETWEEN %s AND %s AND sign_in_time IS NOT NULL",
+            $guest_id, $month_start, $month_end
+        ));
+        $yearly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE guest_id = %d AND visit_date BETWEEN %s AND %s AND sign_in_time IS NOT NULL",
+            $guest_id, $year_start, $year_end
+        ));
+
+        $monthly_limit = 4;
+        $yearly_limit  = 12;
+
+        if ($monthly_visits >= $monthly_limit) {
+            wp_send_json_error(['messages' => ['This guest has reached the monthly visit limit']]);
+        }
+        if ($yearly_visits >= $yearly_limit) {
+            wp_send_json_error(['messages' => ['This guest has reached the yearly visit limit']]);
+        }
+
+        // Insert visit
+        $inserted = $wpdb->insert(
+            $table,
+            [
+                'guest_id'       => $guest_id,
+                'host_member_id' => $host_member_id,
+                'visit_date'     => $visit_date,
+                'courtesy'       => $courtesy
+            ],
+            ['%d','%d','%s','%s']
+        );
+
+        if (!$inserted) {
+            wp_send_json_error(['messages' => ['Failed to register visit']]);
+        }
+
+        $visit_id = $wpdb->insert_id;
+        $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
+
+        // Host display name
+        $host_display = 'N/A';
+        if (!empty($visit->host_member_id)) {
+            $host_user = get_userdata($visit->host_member_id);
+            if ($host_user) {
+                $first = get_user_meta($visit->host_member_id, 'first_name', true);
+                $last  = get_user_meta($visit->host_member_id, 'last_name', true);
+                $host_display = (!empty($first) || !empty($last)) ? trim($first . ' ' . $last) : $host_user->user_login;
+            }
+        }
+
+        // Status fields
+        $status       = self::get_visit_status($visit->visit_date, $visit->sign_in_time, $visit->sign_out_time);
+        $status_class = self::get_status_class($status);
+        $status_text  = self::get_status_text($status);
+
+        wp_send_json_success([
+            'id'            => $visit->id,
+            'host_display'  => $host_display,
+            'visit_date'    => self::format_date($visit->visit_date),
+            'sign_in_time'  => self::format_time($visit->sign_in_time),
+            'sign_out_time' => self::format_time($visit->sign_out_time),
+            'duration'      => self::calculate_duration($visit->sign_in_time, $visit->sign_out_time),
+            'status_class'  => $status_class,
+            'status_text'   => $status_text,
+            'messages'      => ['Visit registered successfully']
         ]);
     }
 
@@ -606,107 +768,6 @@ class VMS_CoreManager
 
         wp_send_json_success([
             'message' => 'Guest deleted successfully'
-        ]);
-    }
-
-    /**
-     * The function `handle_visit_registration` handles the registration of visits, validates input data,
-     * inserts visit records into the database, and returns JSON responses based on the success or failure
-     * of the operation.
-     */
-    /**
-     * Handle visit registration via AJAX
-     */
-    public function handle_visit_registration() 
-    {
-        global $wpdb;
-
-        $guest_id       = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
-        $host_member_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
-        $visit_date     = sanitize_text_field($_POST['visit_date'] ?? '');
-        $courtesy       = sanitize_text_field($_POST['courtesy'] ?? '');
-
-        $errors = [];
-
-        // Validate guest
-        if ($guest_id <= 0) {
-            $errors[] = 'Guest is required';
-        } else {
-            $guest_exists = $wpdb->get_var(
-                $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}vms_guests WHERE id = %d", $guest_id)
-            );
-            if (!$guest_exists) {
-                $errors[] = 'Invalid guest selected';
-            }
-        }
-
-        // Validate visit date
-        if (empty($visit_date)) {
-            $errors[] = 'Visit date is required';
-        }
-
-        // Check for duplicate visit
-        $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        if (!empty($guest_id) && !empty($visit_date)) {
-            $existing = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$table} WHERE guest_id = %d AND visit_date = %s",
-                    $guest_id,
-                    $visit_date
-                )
-            );
-            if ($existing) {
-                $errors[] = 'This guest already has a visit registered on this date';
-            }
-        }
-
-        if (!empty($errors)) {
-            wp_send_json_error(['message' => implode(', ', $errors)]);
-        }
-
-        // Insert visit
-        $inserted = $wpdb->insert(
-            $table,
-            [
-                'guest_id'       => $guest_id,
-                'host_member_id' => $host_member_id,
-                'visit_date'     => $visit_date,
-                'courtesy'       => $courtesy,
-            ],
-            ['%d', '%d', '%s', '%s']
-        );
-
-        if (!$inserted) {
-            wp_send_json_error(['message' => 'Database insert failed']);
-        }
-
-        $visit_id = $wpdb->insert_id;
-        $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
-
-        // Format host display name
-        $host_display = 'N/A';
-        if (!empty($visit->host_member_id)) {
-            $host_user = get_userdata($visit->host_member_id);
-            if ($host_user) {
-                $first = get_user_meta($visit->host_member_id, 'first_name', true);
-                $last  = get_user_meta($visit->host_member_id, 'last_name', true);
-                $host_display = (!empty($first) || !empty($last)) ? trim($first . ' ' . $last) : $host_user->user_login;
-            }
-        }
-
-        $status       = self::get_visit_status($visit->visit_date, $visit->sign_in_time, $visit->sign_out_time);
-        $status_class = self::get_status_class($status);
-        $status_text  = self::get_status_text($status);
-
-        wp_send_json_success([
-            'id'            => $visit->id,
-            'host_display'  => $host_display,
-            'visit_date'    => self::format_date($visit->visit_date),
-            'sign_in_time'  => self::format_time($visit->sign_in_time),
-            'sign_out_time' => self::format_time($visit->sign_out_time),
-            'duration'      => self::calculate_duration($visit->sign_in_time, $visit->sign_out_time),
-            'status_class'  => $status_class,
-            'status_text'   => $status_text,
         ]);
     }
 
@@ -1122,6 +1183,85 @@ class VMS_CoreManager
             'guestData' => $guest_data
         ]);
     }
+
+    /**
+     * Automatically update visit statuses based on monthly/yearly limits.
+     * Should be run periodically (e.g., WP-Cron or custom scheduled task).
+     */
+    public static function auto_update_visit_statuses(): void
+    {
+        global $wpdb;
+
+        error_log('Auto update visit statuses');
+
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table       = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get all active guests
+        $guest_ids = $wpdb->get_col("SELECT id FROM $guests_table WHERE guest_status = 'active'");
+
+        foreach ($guest_ids as $guest_id) {
+
+            // Fetch all future and past scheduled visits ordered by date
+            $visits = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, visit_date, sign_in_time, status FROM $guest_visits_table WHERE guest_id = %d ORDER BY visit_date ASC",
+                $guest_id
+            ));
+
+            if (!$visits) continue;
+
+            // Keep track of monthly and yearly counts (attended visits)
+            $monthly_counts = [];
+            $yearly_counts  = [];
+
+            foreach ($visits as $visit) {
+                $month_key = date('Y-m', strtotime($visit->visit_date));
+                $year_key  = date('Y', strtotime($visit->visit_date));
+
+                if (!isset($monthly_counts[$month_key])) $monthly_counts[$month_key] = 0;
+                if (!isset($yearly_counts[$year_key])) $yearly_counts[$year_key] = 0;
+
+                // Count only attended visits
+                $attended = !empty($visit->sign_in_time);
+
+                if ($attended) {
+                    $monthly_counts[$month_key]++;
+                    $yearly_counts[$year_key]++;
+                }
+
+                $should_approve = true;
+
+                // Check if this visit would exceed monthly limit
+                if ($monthly_counts[$month_key] > 4) {
+                    $should_approve = false;
+                }
+
+                // Check yearly limit
+                if ($yearly_counts[$year_key] > 24) {
+                    $should_approve = false;
+                }
+
+                // If visit not attended, reduce monthly/yearly tally for future visits
+                if (!$attended) {
+                    $monthly_counts[$month_key]--;
+                    $yearly_counts[$year_key]--;
+                }
+
+                // Update status only if needed
+                $new_status = $should_approve ? 'approved' : 'unapproved';
+                if ($visit->status !== $new_status) {
+                    $wpdb->update(
+                        $guest_visits_table,
+                        ['status' => $new_status],
+                        ['id' => $visit->id],
+                        ['%s'],
+                        ['%d']
+                    );
+                }
+            }
+        }
+    }
+
 
     /**
      * Automatically sign out guests at midnight for the current day

@@ -207,6 +207,9 @@ class VMS_Activation
 
     private static function activate_cron_jobs(): void
     {
+        if (!wp_next_scheduled('auto_update_visit_status_at_midnight')) {
+            wp_schedule_event(strtotime('midnight'), 'daily', 'auto_update_visit_status_at_midnight');
+        }
         if (!wp_next_scheduled('auto_sign_out_guests_at_midnight')) {
             wp_schedule_event(strtotime('midnight'), 'daily', 'auto_sign_out_guests_at_midnight');
         }
@@ -220,6 +223,7 @@ class VMS_Activation
 
     private static function deactivate_cron_jobs(): void
     {
+        wp_clear_scheduled_hook('auto_update_visit_status_at_midnight');
         wp_clear_scheduled_hook('auto_sign_out_guests_at_midnight');
         wp_clear_scheduled_hook('reset_monthly_guest_limits');
         wp_clear_scheduled_hook('reset_yearly_guest_limits');
