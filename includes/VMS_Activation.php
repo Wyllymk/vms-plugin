@@ -47,7 +47,7 @@ class VMS_Activation
             ['title' => 'Dashboard', 'template' => 'page-templates/page-dashboard.php'],
             ['title' => 'Members', 'template' => 'page-templates/page-members.php'],
             ['title' => 'Employees', 'template' => 'page-templates/page-employees.php'],
-            ['title' => 'Employee Details', 'template' => 'page-templates/page-employee-details.php'],
+            ['title' => 'Details', 'template' => 'page-templates/page-details.php'],
             ['title' => 'Guests', 'template' => 'page-templates/page-guests.php'],
             ['title' => 'Guest Details', 'template' => 'page-templates/page-guest-details.php'],
             ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']
@@ -246,7 +246,7 @@ class VMS_Activation
         $pages = [
             'login', 'register', 'lost-password', 'password-reset',
             'terms-conditions', 'profile', 'dashboard', 'employees',
-            'employee-details', 'members', 'member-details',
+            'details', 'members', 'member-details',
             'guests', 'guest-details', 'settings'
         ];
 

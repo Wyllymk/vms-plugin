@@ -51,7 +51,6 @@ class VMS_CoreManager
     private function setup_authentication_hooks(): void
     {
         add_action('login_init', [$this, 'handle_custom_login_redirect']);
-        add_action('login_init', [$this, 'handle_lost_password_redirect']);
         add_filter('login_redirect', [$this, 'custom_login_redirect'], 10, 3);
         add_filter('wp_authenticate_user', [$this, 'validate_user_status'], 10, 1);
         add_filter('retrieve_password_message', [$this, 'custom_password_reset_email'], 10, 4);
@@ -89,28 +88,40 @@ class VMS_CoreManager
      */
     public function handle_custom_login_redirect(): void
     {
-        if (!is_user_logged_in() && !wp_doing_ajax()) {
-            if (isset($_GET['action']) && $_GET['action'] === 'rp' && isset($_GET['key'], $_GET['login'])) {
-                wp_redirect(site_url('/password-reset/?key=' . urlencode($_GET['key']) . '&login=' . urlencode($_GET['login'])));
+        if ( is_user_logged_in() || wp_doing_ajax() ) {
+            return;
+        }
+
+        $action = $_REQUEST['action'] ?? '';
+
+        switch ( $action ) {
+            case 'lostpassword':
+                wp_redirect( site_url( '/lost-password' ) );
                 exit;
-            }
-            wp_redirect(site_url('/login/'));
-            exit;
+
+            case 'rp':
+            case 'resetpass':
+                if ( isset($_GET['key'], $_GET['login']) ) {
+                    wp_redirect( site_url( '/password-reset/?key=' . urlencode($_GET['key']) . '&login=' . urlencode($_GET['login']) ) );
+                    exit;
+                }
+                break;
+
+            case 'register':
+                wp_redirect( site_url( '/register' ) );
+                exit;
+
+            case 'login':
+            case '':
+                wp_redirect( site_url( '/login' ) );
+                exit;
+
+            default:
+                // Let WP handle anything else (e.g., core plugins adding actions)
+                return;
         }
     }
 
-    /**
-     * Handle lost password redirect
-     */
-    public function handle_lost_password_redirect(): void
-    {
-        if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'lostpassword') {
-            if (!is_user_logged_in()) {
-                wp_redirect(site_url('/lost-password'));
-                exit;
-            }
-        }
-    }
 
     /**
      * Custom login redirect based on user role
@@ -173,21 +184,27 @@ class VMS_CoreManager
     public function custom_password_reset_email(string $message, string $key, string $user_login, WP_User $user_data): string
     {
         $reset_url = add_query_arg([
-            'key' => $key,
-            'login' => rawurlencode($user_login)
+            'key'   => $key,
+            'login' => rawurlencode($user_login),
         ], home_url('/password-reset'));
 
         $site_name = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
-        $user_ip = $_SERVER['REMOTE_ADDR'];
+        $user_ip   = isset($_SERVER['REMOTE_ADDR']) ? wp_unslash($_SERVER['REMOTE_ADDR']) : 'Unknown IP';
 
         return sprintf(
-            __("Someone has requested a password reset for the following account:\r\n\r\nSite Name: %s\r\nUsername: %s\r\n\r\nIf this was a mistake, ignore this email and nothing will happen.\r\n\r\nTo reset your password, visit the following address:\r\n\r\n%s\r\n\r\nThis password reset request originated from the IP address %s.\r\n", 'vms'),
-            $site_name,
-            $user_login,
-            $reset_url,
-            $user_ip
+            __(
+                "Someone has requested a password reset for the following account:%s%sSite Name: %s%sUsername: %s%s%sIf this was a mistake, ignore this email and nothing will happen.%s%sTo reset your password, visit the following address:%s%s%s%sThis password reset request originated from the IP address %s.%s",
+                'vms'
+            ),
+            PHP_EOL, PHP_EOL,
+            $site_name, PHP_EOL,
+            $user_login, PHP_EOL, PHP_EOL,
+            PHP_EOL, PHP_EOL,
+            PHP_EOL, esc_url($reset_url), PHP_EOL, PHP_EOL,
+            $user_ip, PHP_EOL
         );
     }
+
 
     /**
      * Restrict admin access for non-admins
