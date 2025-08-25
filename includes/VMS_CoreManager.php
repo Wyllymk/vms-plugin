@@ -135,14 +135,36 @@ class VMS_CoreManager
             return $user;
         }
 
-        if (get_user_meta($user->ID, 'registration_status', true) !== 'active') {
-            return new WP_Error(
-                'inactive',
-                __('Your account is pending approval. Please try again later.', 'vms')
-            );
-        }
+        $status = get_user_meta($user->ID, 'registration_status', true);
 
-        return $user;
+        switch ($status) {
+            case 'active':
+                return $user;
+
+            case 'pending':
+                return new WP_Error(
+                    'account_pending',
+                    __('Your account is pending approval. Please try again later.', 'vms')
+                );
+
+            case 'suspended':
+                return new WP_Error(
+                    'account_suspended',
+                    __('Your account has been suspended. Contact support for assistance.', 'vms')
+                );
+
+            case 'banned':
+                return new WP_Error(
+                    'account_banned',
+                    __('Your account has been permanently banned. Please contact the administrator if you believe this is an error.', 'vms')
+                );
+
+            default:
+                return new WP_Error(
+                    'account_inactive',
+                    __('Your account status is invalid. Please contact support.', 'vms')
+                );
+        }
     }
 
     /**
@@ -645,61 +667,170 @@ class VMS_CoreManager
         ]);
     }
 
-    public static function format_date($date_string) {
-        if (!$date_string) return 'N/A';
-        return date('M j, Y', strtotime($date_string));
+    public static function get_guests_by_host($host_member_id) {
+        global $wpdb;
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+
+        // Join to also fetch last visit date if needed
+        $sql = $wpdb->prepare("
+            SELECT g.*, gv.visit_date, gv.sign_in_time, gv.sign_out_time
+            FROM $guests_table g
+            LEFT JOIN $guest_visits_table gv ON gv.guest_id = g.id AND gv.host_member_id = %d
+            WHERE gv.host_member_id = %d
+            ORDER BY g.created_at DESC
+        ", $host_member_id, $host_member_id);
+
+        return $wpdb->get_results($sql);
     }
 
-    public static function format_time($time_string) {
-        if (!$time_string) return 'N/A';
-        return date('g:i A', strtotime($time_string));
+    /**
+     * Build URL for pagination links (query-string only)
+     */
+    public static function build_pagination_url($page) {
+        // Always start from the current request URI (query args only)
+        $current_url = add_query_arg([], $_SERVER['REQUEST_URI']);
+
+        // Forcefully strip any trailing /page/{num}/ if present
+        $current_url = preg_replace('#/page/\d+/#', '/', $current_url);
+
+        // Remove any existing 'paged' param
+        $current_url = remove_query_arg('paged', $current_url);
+
+        // Add back the new paged value
+        return add_query_arg(['paged' => $page], $current_url);
+    }
+    
+    /**
+     * Build URL for per-page selection
+     */
+    public static function build_per_page_url() {
+        $current_url = home_url(add_query_arg([], $_SERVER['REQUEST_URI']));
+        // Remove any existing 'per_page' and 'paged' params
+        $current_url = remove_query_arg(['per_page', 'paged'], $current_url);
+        // Add the placeholder for 'per_page'; the value will be appended by JS onchange
+        return add_query_arg(['per_page' => ''], $current_url);
     }
 
-    public static function calculate_duration($sign_in, $sign_out) {
-        if (!$sign_in || !$sign_out) return 'N/A';
+    
+    /**
+     * Build URL for sorting (if you need sorting functionality)
+     */
+    public static function build_sort_url($column) {
+        $current_sort = isset($_GET['sort_column']) ? $_GET['sort_column'] : '';
+        $current_direction = isset($_GET['sort_direction']) ? $_GET['sort_direction'] : 'asc';
         
-        $in_time = strtotime($sign_in);
-        $out_time = strtotime($sign_out);
-        $diff = $out_time - $in_time;
+        // Toggle direction if same column, otherwise default to asc
+        $new_direction = ($current_sort === $column && $current_direction === 'asc') ? 'desc' : 'asc';
         
-        $hours = floor($diff / 3600);
-        $minutes = floor(($diff % 3600) / 60);
+        $current_url = remove_query_arg(['sort_column', 'sort_direction', 'paged'], $_SERVER['REQUEST_URI']);
+        return add_query_arg([
+            'sort_column' => $column,
+            'sort_direction' => $new_direction,
+            'paged' => 1 // Reset to page 1 when sorting
+        ], $current_url);
+    }
+    
+    /**
+     * Format date for display
+     */
+    public static function format_date($date) {
+        if (!$date || $date === '0000-00-00') {
+            return 'N/A';
+        }
+        return date('M j, Y', strtotime($date));
+    }
+    
+    /**
+     * Format time for display
+     */
+    public static function format_time($datetime) {
+        if (!$datetime || $datetime === '0000-00-00 00:00:00') {
+            return 'N/A';
+        }
+        return date('g:i A', strtotime($datetime));
+    }
+    
+    /**
+     * Calculate duration between two times
+     */
+    public static function calculate_duration($sign_in_time, $sign_out_time) {
+        if (!$sign_in_time || !$sign_out_time || 
+            $sign_in_time === '0000-00-00 00:00:00' || 
+            $sign_out_time === '0000-00-00 00:00:00') {
+            return 'N/A';
+        }
         
-        return sprintf('%dh %dm', $hours, $minutes);
-    }
-
-    // Updated status functions to include "Missed" status
-    public static function get_visit_status($visit_date, $sign_in_time, $sign_out_time) {
-            $current_date = current_time('Y-m-d');
-
-            if (empty($sign_in_time) && !empty($visit_date) && $visit_date < $current_date) {
-                return 'missed';
-            }
-
-            return !empty($sign_out_time) ? 'completed' : 'active';
-    }
-
-    public static function get_status_class($status) {
-        switch ($status) {
-            case 'completed':
-                return 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500';
-            case 'active':
-                return 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-warning-500';
-            case 'missed':
-                return 'bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-500';
-            default:
-                return 'bg-blue-light-50 text-blue-light-500 dark:bg-blue-light-500/15 dark:text-blue-light-500';
+        $start = new \DateTime($sign_in_time);
+        $end = new \DateTime($sign_out_time);
+        $interval = $start->diff($end);
+        
+        if ($interval->days > 0) {
+            return $interval->format('%d day(s) %h:%i');
+        } else {
+            return $interval->format('%h:%i');
         }
     }
-
+    
+    /**
+     * Get visit status based on dates and times
+     */
+    public static function get_visit_status($visit_date, $sign_in_time, $sign_out_time) {
+        $today = date('Y-m-d');
+        $now = new \DateTime();
+        
+        if ($visit_date > $today) {
+            return 'scheduled';
+        } elseif (empty($sign_in_time) && !empty($visit_date) && $visit_date < $today) {
+            return 'missed';
+        } elseif ($visit_date < $today) {
+            return 'completed';        
+        } else { // Today
+            if (!$sign_in_time || $sign_in_time === '0000-00-00 00:00:00') {
+                return 'pending';
+            } elseif (!$sign_out_time || $sign_out_time === '0000-00-00 00:00:00') {
+                return 'active';
+            } else {
+                return 'completed';
+            }
+        }   
+    }
+    
+    /**
+     * Get CSS class for status
+     */
+    public static function get_status_class($status) {
+        switch ($status) {
+            case 'active':
+                return 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500';
+            case 'missed':
+                return 'bg-error-50text-error-600 dark:bg-error-500/15 dark:text-error-500';
+            case 'completed':
+                return 'bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400';
+            case 'scheduled':
+                return 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-orange-400';
+            case 'pending':
+                return 'bg-blue-light-50 text-blue-light-500 dark:bg-blue-light-500/15 dark:text-blue-light-500';
+            default:
+                return 'bg-gray-500 text-white dark:bg-white/5 dark:text-white';
+        }
+    }
+    
+    /**
+     * Get human-readable status text
+     */
     public static function get_status_text($status) {
         switch ($status) {
-            case 'completed':
-                return 'Completed';
             case 'active':
                 return 'Active';
             case 'missed':
                 return 'Missed';
+            case 'completed':
+                return 'Completed';
+            case 'scheduled':
+                return 'Scheduled';
+            case 'pending':
+                return 'Pending';
             default:
                 return 'Unknown';
         }
