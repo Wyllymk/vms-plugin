@@ -294,6 +294,8 @@ class VMS_CoreManager
     {
         $this->verify_ajax_request();
 
+        error_log('Handle guest registration');
+
         $errors = [];
 
         // Sanitize input
@@ -368,6 +370,8 @@ class VMS_CoreManager
                 ['%s', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
+
+
         } else {
             // Create new guest
             $wpdb->insert(
@@ -699,6 +703,39 @@ class VMS_CoreManager
         ", $host_member_id, $host_member_id);
 
         return $wpdb->get_results($sql);
+    }
+
+    /**
+     * Get paginated guest visits by host member ID
+     */
+    public static function get_paginated_guest_visits($host_member_id, $per_page = 10, $offset = 0) {
+        global $wpdb;
+        $guest_visits_table = $wpdb->prefix . 'vms_guest_visits';
+        $guests_table = $wpdb->prefix . 'vms_guests';
+
+        $sql = $wpdb->prepare("
+            SELECT gv.*, g.first_name, g.last_name, gv.id as visit_id
+            FROM $guest_visits_table gv
+            LEFT JOIN $guests_table g ON g.id = gv.guest_id
+            WHERE gv.host_member_id = %d
+            ORDER BY gv.visit_date DESC, gv.created_at DESC
+            LIMIT %d OFFSET %d
+        ", $host_member_id, $per_page, $offset);
+
+        return $wpdb->get_results($sql);
+    }
+
+    /**
+     * Count total guest visits for a host
+     */
+    public static function count_guest_visits($host_member_id) {
+        global $wpdb;
+        $guest_visits_table = $wpdb->prefix . 'vms_guest_visits';
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table WHERE host_member_id = %d",
+            $host_member_id
+        ));
     }
 
     /**
