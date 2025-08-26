@@ -257,11 +257,11 @@ class VMS_Activation
     private static function drop_database_tables(): void
     {
         global $wpdb;
-        $tables = [
-            VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE),
+        $tables = [            
             VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE),
             VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),
-            VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE)
+            VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE)
         ];
         foreach ($tables as $table) {
             $wpdb->query("DROP TABLE IF EXISTS $table");
