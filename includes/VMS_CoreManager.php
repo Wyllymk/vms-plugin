@@ -289,6 +289,49 @@ class VMS_CoreManager
     }
 
     /**
+     * Determine preliminary status for a visit during registration
+     */
+    private static function calculate_preliminary_visit_status(int $guest_id, string $visit_date): string
+    {
+        global $wpdb;
+
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+
+        $monthly_limit = 4;
+        $yearly_limit  = 24;
+
+        $month_start = date('Y-m-01', strtotime($visit_date));
+        $month_end   = date('Y-m-t', strtotime($visit_date));
+        $year_start  = date('Y-01-01', strtotime($visit_date));
+        $year_end    = date('Y-12-31', strtotime($visit_date));
+
+        // Count **all scheduled visits** for this guest in the month/year (approved or unapproved)
+        $monthly_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table 
+            WHERE guest_id = %d 
+            AND visit_date BETWEEN %s AND %s",
+            $guest_id, $month_start, $month_end
+        ));
+
+        $yearly_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table 
+            WHERE guest_id = %d 
+            AND visit_date BETWEEN %s AND %s",
+            $guest_id, $year_start, $year_end
+        ));
+
+        // Determine status
+        if ($monthly_count >= $monthly_limit || $yearly_count >= $yearly_limit) {
+            error_log('Monthly or yearly limit reached for guest ' . $guest_id . ' on ' . $visit_date);
+            return 'unapproved';
+        }
+
+        error_log('Approved visit for guest ' . $guest_id . ' on ' . $visit_date);
+        return 'approved';
+    }
+
+
+    /**
      * Handle guest registration via AJAX
      */
     public function handle_guest_registration(): void
@@ -348,7 +391,7 @@ class VMS_CoreManager
 
         // Check if guest already exists by ID number
         $existing_guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, status, guest_status FROM $guests_table WHERE id_number = %s",
+            "SELECT id, guest_status FROM $guests_table WHERE id_number = %s",
             $id_number
         ));
 
@@ -380,11 +423,10 @@ class VMS_CoreManager
                     'phone_number'     => $phone_number,
                     'id_number'        => $id_number,
                     'receive_emails'   => $receive_emails,
-                    'receive_messages' => $receive_messages,
-                    'status'           => 'approved',
+                    'receive_messages' => $receive_messages,                   
                     'guest_status'     => 'active'
                 ],
-                ['%s','%s','%s','%s','%s','%s','%s','%s','%s']
+                ['%s','%s','%s','%s','%s','%s','%s','%s']
             );
             $guest_id = $wpdb->insert_id;
         }
@@ -439,16 +481,29 @@ class VMS_CoreManager
             return;
         }
 
-        // Insert visit record
+        // Before inserting the visit: check status
+        $preliminary_status = self::calculate_preliminary_visit_status($guest_id, $visit_date);
+
+        // ✅ New host daily limit check
+        $host_guest_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table WHERE host_member_id = %d AND visit_date = %s",
+            $host_member_id,
+            $visit_date
+        ));
+        if ($host_guest_count >= 4) {
+            $preliminary_status = 'unapproved';
+        }
+
         $visit_result = $wpdb->insert(
             $guest_visits_table,
             [
                 'guest_id'       => $guest_id,
                 'host_member_id' => $host_member_id,
                 'visit_date'     => $visit_date,
-                'courtesy'       => $courtesy
+                'courtesy'       => $courtesy,
+                'status'         => $preliminary_status
             ],
-            ['%d','%d','%s','%s']
+            ['%d','%d','%s','%s','%s']
         );
 
         if ($visit_result === false) {
@@ -476,7 +531,7 @@ class VMS_CoreManager
             'courtesy'        => $courtesy,
             'receive_emails'  => $receive_emails,
             'receive_messages'=> $receive_messages,
-            'status'          => $existing_guest->status ?? 'approved',
+            'status'          => $preliminary_status,
             'guest_status'    => $final_guest_data->guest_status ?? 'active',
             'sign_in_time'    => null,
             'sign_out_time'   => null,
@@ -489,11 +544,6 @@ class VMS_CoreManager
         ]);
     }
 
-    /**
-     * The function `handle_visit_registration` handles the registration of visits, validates input data,
-     * inserts visit records into the database, and returns JSON responses based on the success or failure
-     * of the operation.
-     */
     /**
      * Handle visit registration via AJAX
      */
@@ -580,17 +630,30 @@ class VMS_CoreManager
             wp_send_json_error(['messages' => ['This guest has reached the yearly visit limit']]);
         }
 
-        // Insert visit
+        // Before inserting the visit: check status
+        $preliminary_status = self::calculate_preliminary_visit_status($guest_id, $visit_date);
+
+        // ✅ New host daily limit check
+        $host_guest_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE host_member_id = %d AND visit_date = %s",
+            $host_member_id,
+            $visit_date
+        ));
+        if ($host_guest_count >= 4) {
+            $preliminary_status = 'unapproved';
+        }
+
         $inserted = $wpdb->insert(
             $table,
             [
                 'guest_id'       => $guest_id,
                 'host_member_id' => $host_member_id,
                 'visit_date'     => $visit_date,
-                'courtesy'       => $courtesy
+                'courtesy'       => $courtesy,
+                'status'         => $preliminary_status
             ],
-            ['%d','%d','%s','%s']
-        );
+            ['%d','%d','%s','%s','%s']
+        );        
 
         if (!$inserted) {
             wp_send_json_error(['messages' => ['Failed to register visit']]);
@@ -622,6 +685,7 @@ class VMS_CoreManager
             'sign_in_time'  => self::format_time($visit->sign_in_time),
             'sign_out_time' => self::format_time($visit->sign_out_time),
             'duration'      => self::calculate_duration($visit->sign_in_time, $visit->sign_out_time),
+            'status'        => $preliminary_status,
             'status_class'  => $status_class,
             'status_text'   => $status_text,
             'messages'      => ['Visit registered successfully']
@@ -771,7 +835,6 @@ class VMS_CoreManager
         ]);
     }
 
-
     public static function get_guests_by_host($host_member_id) {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
@@ -913,13 +976,19 @@ class VMS_CoreManager
     /**
      * Get visit status based on dates and times
      */
-    public static function get_visit_status($visit_date, $sign_in_time, $sign_out_time) {
+    public static function get_visit_status($visit_date, $sign_in_time, $sign_out_time, $visit_status_db = 'approved') {
+        // If visit is not approved, suspended, or banned, return that directly
+        if (in_array($visit_status_db, ['unapproved', 'suspended', 'banned'])) {
+            error_log($visit_status_db);
+            return $visit_status_db;
+        }
+
+        // Only approved visits proceed to check actual timing/status
         $today = date('Y-m-d');
-        $now = new \DateTime();
-        
+
         if ($visit_date > $today) {
             return 'scheduled';
-        } elseif (empty($sign_in_time) && !empty($visit_date) && $visit_date < $today) {
+        } elseif (empty($sign_in_time) && $visit_date < $today) {
             return 'missed';
         } elseif ($visit_date < $today) {
             return 'completed';        
@@ -931,8 +1000,9 @@ class VMS_CoreManager
             } else {
                 return 'completed';
             }
-        }   
+        }
     }
+
     
     /**
      * Get CSS class for status
@@ -1185,8 +1255,8 @@ class VMS_CoreManager
     }
 
     /**
-     * Automatically update visit statuses based on monthly/yearly limits.
-     * Should be run periodically (e.g., WP-Cron or custom scheduled task).
+     * Automatically update visit statuses based on monthly/yearly scheduled limits.
+     * Accounts for missed visits to free up slots for future approvals.
      */
     public static function auto_update_visit_statuses(): void
     {
@@ -1197,12 +1267,15 @@ class VMS_CoreManager
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table       = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
+        $monthly_limit = 4;
+        $yearly_limit  = 24;
+
         // Get all active guests
         $guest_ids = $wpdb->get_col("SELECT id FROM $guests_table WHERE guest_status = 'active'");
 
         foreach ($guest_ids as $guest_id) {
 
-            // Fetch all future and past scheduled visits ordered by date
+            // Fetch all visits for guest, ordered by visit_date ASC
             $visits = $wpdb->get_results($wpdb->prepare(
                 "SELECT id, visit_date, sign_in_time, status FROM $guest_visits_table WHERE guest_id = %d ORDER BY visit_date ASC",
                 $guest_id
@@ -1210,45 +1283,41 @@ class VMS_CoreManager
 
             if (!$visits) continue;
 
-            // Keep track of monthly and yearly counts (attended visits)
-            $monthly_counts = [];
-            $yearly_counts  = [];
+            $monthly_scheduled = [];
+            $yearly_scheduled  = [];
 
             foreach ($visits as $visit) {
                 $month_key = date('Y-m', strtotime($visit->visit_date));
                 $year_key  = date('Y', strtotime($visit->visit_date));
 
-                if (!isset($monthly_counts[$month_key])) $monthly_counts[$month_key] = 0;
-                if (!isset($yearly_counts[$year_key])) $yearly_counts[$year_key] = 0;
+                if (!isset($monthly_scheduled[$month_key])) $monthly_scheduled[$month_key] = 0;
+                if (!isset($yearly_scheduled[$year_key])) $yearly_scheduled[$year_key] = 0;
 
-                // Count only attended visits
-                $attended = !empty($visit->sign_in_time);
+                $visit_date_obj = new \DateTime($visit->visit_date);
+                $today = new \DateTime(current_time('Y-m-d'));
 
-                if ($attended) {
-                    $monthly_counts[$month_key]++;
-                    $yearly_counts[$year_key]++;
+                $is_past = $visit_date_obj < $today;
+                $attended = $is_past && !empty($visit->sign_in_time);
+
+                // Increment counts for **future visits or past attended visits**
+                if (!$is_past || $attended) {
+                    $monthly_scheduled[$month_key]++;
+                    $yearly_scheduled[$year_key]++;
                 }
 
-                $should_approve = true;
-
-                // Check if this visit would exceed monthly limit
-                if ($monthly_counts[$month_key] > 4) {
-                    $should_approve = false;
+                // Determine status for this visit
+                $new_status = 'approved';
+                if ($monthly_scheduled[$month_key] > $monthly_limit || $yearly_scheduled[$year_key] > $yearly_limit) {
+                    $new_status = 'unapproved';
                 }
 
-                // Check yearly limit
-                if ($yearly_counts[$year_key] > 24) {
-                    $should_approve = false;
+                // If this is a **missed past visit**, reduce counts to free slots
+                if ($is_past && empty($visit->sign_in_time)) {
+                    $monthly_scheduled[$month_key]--;
+                    $yearly_scheduled[$year_key]--;
                 }
 
-                // If visit not attended, reduce monthly/yearly tally for future visits
-                if (!$attended) {
-                    $monthly_counts[$month_key]--;
-                    $yearly_counts[$year_key]--;
-                }
-
-                // Update status only if needed
-                $new_status = $should_approve ? 'approved' : 'unapproved';
+                // Update only if status changed
                 if ($visit->status !== $new_status) {
                     $wpdb->update(
                         $guest_visits_table,
@@ -1261,7 +1330,6 @@ class VMS_CoreManager
             }
         }
     }
-
 
     /**
      * Automatically sign out guests at midnight for the current day

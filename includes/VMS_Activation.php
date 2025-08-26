@@ -104,7 +104,6 @@ class VMS_Activation
             email VARCHAR(255) DEFAULT NULL,
             phone_number VARCHAR(20) DEFAULT NULL,
             id_number VARCHAR(100) NOT NULL,
-            status ENUM('approved','unapproved','suspended','banned') DEFAULT 'approved',
             guest_status ENUM('active','suspended','banned') DEFAULT 'active',
             receive_emails ENUM('yes','no') DEFAULT 'no',
             receive_messages ENUM('yes','no') DEFAULT 'no',
@@ -113,8 +112,7 @@ class VMS_Activation
             PRIMARY KEY  (id),
             UNIQUE KEY unique_id_number (id_number),
             KEY email (email),
-            KEY phone_number (phone_number),
-            KEY status (status),
+            KEY phone_number (phone_number),           
             KEY guest_status (guest_status)
         ) ENGINE=InnoDB $charset_collate;";
 
@@ -129,12 +127,14 @@ class VMS_Activation
         $table_name = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
+        // Step 1: Create table without foreign key
         $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             guest_id BIGINT(20) UNSIGNED NOT NULL,
             host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
             courtesy VARCHAR(255) DEFAULT NULL,
             visit_date DATE NOT NULL,
+            status ENUM('approved','unapproved','suspended','banned') NOT NULL DEFAULT 'approved',
             sign_in_time DATETIME DEFAULT NULL,
             sign_out_time DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -145,12 +145,32 @@ class VMS_Activation
             KEY visit_date (visit_date),
             KEY sign_in_time (sign_in_time),
             KEY sign_out_time (sign_out_time),
-            UNIQUE KEY unique_guest_visit_date (guest_id, host_member_id, visit_date),
-            CONSTRAINT fk_guest FOREIGN KEY (guest_id) REFERENCES $guests_table (id) ON DELETE CASCADE
+            KEY status (status),
+            UNIQUE KEY unique_guest_visit_date (guest_id, host_member_id, visit_date)
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
+
+        // Step 2: Add foreign key separately (dbDelta doesn’t handle this)
+        $foreign_key_name = 'fk_guest';
+
+        // Check if constraint already exists (avoid duplicates on re-activation)
+        $constraint_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT CONSTRAINT_NAME 
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+            WHERE TABLE_NAME = %s AND CONSTRAINT_NAME = %s AND TABLE_SCHEMA = DATABASE()",
+            $table_name, $foreign_key_name
+        ));
+
+        if (!$constraint_exists) {
+            $wpdb->query("
+                ALTER TABLE $table_name
+                ADD CONSTRAINT $foreign_key_name
+                FOREIGN KEY (guest_id) REFERENCES $guests_table(id)
+                ON DELETE CASCADE
+            ");
+        }
     }
 
     private static function create_reciprocating_members_table(): void
