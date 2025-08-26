@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Visitor Management System Plugin
- * Plugin URI: https://github.com/Wyllymk/vms
+ * Plugin URI: https://github.com/Wyllymk/vms-plugin
  * Description: Integrate VMS Functionalities
  * Version: 1.0.0
  * Author: Wyllymk

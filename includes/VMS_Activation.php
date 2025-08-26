@@ -30,9 +30,8 @@ class VMS_Activation
 
     public static function uninstall(): void
     {
-        if (get_option('vms_remove_all_data', false)) {
-            self::remove_plugin_data();
-        }
+        self::remove_plugin_data();
+        flush_rewrite_rules();
     }
 
     private static function create_essential_pages(): void
@@ -252,7 +251,6 @@ class VMS_Activation
     private static function remove_plugin_data(): void
     {
         self::drop_database_tables();
-        delete_option('vms_remove_all_data');
         self::remove_created_pages();
     }
 
