@@ -134,7 +134,7 @@ class VMS_Activation
             host_member_id BIGINT(20) UNSIGNED DEFAULT NULL,
             courtesy VARCHAR(255) DEFAULT NULL,
             visit_date DATE NOT NULL,
-            status ENUM('approved','unapproved','suspended','banned') NOT NULL DEFAULT 'approved',
+            status ENUM('approved','unapproved','cancelled','suspended','banned') NOT NULL DEFAULT 'approved',
             sign_in_time DATETIME DEFAULT NULL,
             sign_out_time DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
