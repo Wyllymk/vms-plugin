@@ -702,15 +702,17 @@ class VMS_CoreManager
 
         $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
-        // Prevent duplicate visit on same date
-        $existing_visit = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $table WHERE guest_id = %d AND visit_date = %s AND status != 'cancelled'",
+        // Prevent duplicate visit on same date (except cancelled)
+        $existing_visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE guest_id = %d AND visit_date = %s",
             $guest_id,
             $visit_date
         ));
-        if ($existing_visit) {
+
+        if ($existing_visit && $existing_visit->status !== 'cancelled') {
             wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
         }
+
 
         // Monthly and yearly limits: count only approved visits and past sign-ins
         $month_start = date('Y-m-01', strtotime($visit_date));
@@ -772,23 +774,48 @@ class VMS_CoreManager
             $preliminary_status = 'unapproved';
         }
 
-        $inserted = $wpdb->insert(
-            $table,
-            [
-                'guest_id'       => $guest_id,
-                'host_member_id' => $host_member_id,
-                'visit_date'     => $visit_date,
-                'courtesy'       => $courtesy,
-                'status'         => $preliminary_status
-            ],
-            ['%d','%d','%s','%s','%s']
-        );        
+        if ($existing_visit && $existing_visit->status === 'cancelled') {
+            // Reuse cancelled row
+            $updated = $wpdb->update(
+                $table,
+                [
+                    'host_member_id' => $host_member_id,
+                    'courtesy'       => $courtesy,
+                    'status'         => $preliminary_status,
+                    'sign_in_time'   => null,
+                    'sign_out_time'  => null,
+                ],
+                ['id' => $existing_visit->id],
+                ['%d','%s','%s','%s','%s'],
+                ['%d']
+            );
 
-        if (!$inserted) {
-            wp_send_json_error(['messages' => ['Failed to register visit']]);
+            if ($updated === false) {
+                wp_send_json_error(['messages' => ['Failed to update cancelled visit']]);
+            }
+
+            $visit_id = $existing_visit->id;
+        } else {
+            // Insert new row
+            $inserted = $wpdb->insert(
+                $table,
+                [
+                    'guest_id'       => $guest_id,
+                    'host_member_id' => $host_member_id,
+                    'visit_date'     => $visit_date,
+                    'courtesy'       => $courtesy,
+                    'status'         => $preliminary_status
+                ],
+                ['%d','%d','%s','%s','%s']
+            );        
+
+            if (!$inserted) {
+                wp_send_json_error(['messages' => ['Failed to register visit']]);
+            }
+
+            $visit_id = $wpdb->insert_id;
         }
 
-        $visit_id = $wpdb->insert_id;
         $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
 
         // Host display name
