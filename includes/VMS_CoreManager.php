@@ -71,6 +71,7 @@ class VMS_CoreManager
     private function setup_guest_management_hooks(): void
     {
         add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
+        add_action('wp_ajax_courtesy_guest_registration', [$this, 'handle_courtesy_guest_registration']);
         add_action('wp_ajax_update_guest', [$this, 'handle_guest_update']);
         add_action('wp_ajax_delete_guest', [$this, 'handle_guest_deletion']);
         add_action('wp_ajax_register_visit', [$this, 'handle_visit_registration']);
@@ -441,7 +442,6 @@ class VMS_CoreManager
         $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
         $host_member_id   = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
         $visit_date       = sanitize_text_field($_POST['visit_date'] ?? '');
-        $courtesy         = sanitize_textarea_field($_POST['courtesy'] ?? '');
         $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
         $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
 
@@ -607,7 +607,6 @@ class VMS_CoreManager
                 'guest_id'       => $guest_id,
                 'host_member_id' => $host_member_id,
                 'visit_date'     => $visit_date,
-                'courtesy'       => $courtesy,
                 'status'         => $preliminary_status
             ],
             ['%d','%d','%s','%s','%s']
@@ -634,6 +633,164 @@ class VMS_CoreManager
             'id_number'       => $id_number,
             'host_member_id'  => $host_member_id,
             'host_name'       => $host_member ? $host_member->display_name : 'N/A',
+            'visit_date'      => $visit_date,
+            'receive_emails'  => $receive_emails,
+            'receive_messages'=> $receive_messages,
+            'status'          => $preliminary_status,
+            'guest_status'    => $final_guest_data->guest_status ?? 'active',
+            'sign_in_time'    => null,
+            'sign_out_time'   => null,
+            'visit_id'        => $wpdb->insert_id
+        ];
+
+        wp_send_json_success([
+            'messages'  => ['Guest registered successfully'],
+            'guestData' => $guest_data
+        ]);
+    }
+
+        /**
+     * Handle guest registration via AJAX - UPDATED
+     */
+    public function handle_courtesy_guest_registration(): void
+    {
+        $this->verify_ajax_request();
+        error_log('Handle courtesy guest registration');
+
+        global $wpdb;
+
+        $errors = [];
+
+        // Sanitize input
+        $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
+        $email            = sanitize_email($_POST['email'] ?? '');
+        $phone_number     = sanitize_text_field($_POST['phone_number'] ?? '');
+        $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
+        $visit_date       = sanitize_text_field($_POST['visit_date'] ?? '');
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
+        $courtesy         = 'Courtesy';
+
+
+        // Validate required fields
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($id_number)) $errors[] = 'ID number is required';
+
+        // Validate visit date format
+        if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
+            $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
+        } else {
+            $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
+            $current_date = new \DateTime(current_time('Y-m-d'));
+            if (!$visit_date_obj || $visit_date_obj < $current_date) {
+                $errors[] = 'Visit date cannot be in the past';
+            }
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+            return;
+        }
+
+        // Tables
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+
+        // Check if guest already exists by ID number
+        $existing_guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, guest_status FROM $guests_table WHERE id_number = %s",
+            $id_number
+        ));
+
+        if ($existing_guest) {
+            $guest_id = $existing_guest->id;
+            // Update guest info (excluding guest_status)
+            $wpdb->update(
+                $guests_table,
+                [
+                    'first_name'       => $first_name,
+                    'last_name'        => $last_name,
+                    'email'            => $email,
+                    'phone_number'     => $phone_number,
+                    'receive_emails'   => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                ],
+                ['id' => $guest_id],
+                ['%s', '%s', '%s', '%s', '%s', '%s'],
+                ['%d']
+            );
+        } else {
+            // Create new guest
+            $wpdb->insert(
+                $guests_table,
+                [
+                    'first_name'       => $first_name,
+                    'last_name'        => $last_name,
+                    'email'            => $email,
+                    'phone_number'     => $phone_number,
+                    'id_number'        => $id_number,
+                    'receive_emails'   => $receive_emails,
+                    'receive_messages' => $receive_messages,                   
+                    'guest_status'     => 'active'
+                ],
+                ['%s','%s','%s','%s','%s','%s','%s','%s']
+            );
+            $guest_id = $wpdb->insert_id;
+        }
+
+        if (!$guest_id) {
+            wp_send_json_error(['messages' => ['Failed to create or update guest record']]);
+            return;
+        }
+
+        // Prevent duplicate visit on the same date
+        $existing_visit = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $guest_visits_table WHERE guest_id = %d AND visit_date = %s AND status != 'cancelled'",
+            $guest_id,
+            $visit_date
+        ));
+        if ($existing_visit) {
+            wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
+            return;
+        }     
+
+        // Determine preliminary status
+        $preliminary_status = 'approved';     
+
+        $visit_result = $wpdb->insert(
+            $guest_visits_table,
+            [
+                'guest_id'       => $guest_id,
+                'visit_date'     => $visit_date,
+                'courtesy'       => $courtesy,
+                'status'         => $preliminary_status
+            ],
+            ['%d','%s','%s','%s']
+        );
+
+        if ($visit_result === false) {
+            wp_send_json_error(['messages' => ['Failed to create visit record']]);
+            return;
+        }
+
+        // Fetch final guest status
+        $final_guest_data = $wpdb->get_row($wpdb->prepare(
+            "SELECT guest_status FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
+
+        // Prepare guest data for JS
+        $guest_data = [
+            'id'              => $guest_id,
+            'first_name'      => $first_name,
+            'last_name'       => $last_name,
+            'email'           => $email,
+            'phone_number'    => $phone_number,
+            'id_number'       => $id_number,
             'visit_date'      => $visit_date,
             'courtesy'        => $courtesy,
             'receive_emails'  => $receive_emails,
