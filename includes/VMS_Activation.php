@@ -260,22 +260,40 @@ class VMS_Activation
 
     private static function activate_cron_jobs(): void
     {
+        // Local midnight according to WP settings
+        $midnight_local = strtotime('midnight', current_time('timestamp'));
+
+        // Convert to UTC for cron storage
+        $midnight_utc = $midnight_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
+
+        if (!wp_next_scheduled('schedule_sms_balance_cron')) {
+            wp_schedule_event($midnight_utc, 'daily', 'schedule_sms_balance_cron');
+        }
         if (!wp_next_scheduled('auto_update_visit_status_at_midnight')) {
-            wp_schedule_event(strtotime('midnight'), 'daily', 'auto_update_visit_status_at_midnight');
+            wp_schedule_event($midnight_local, 'daily', 'auto_update_visit_status_at_midnight');
         }
         if (!wp_next_scheduled('auto_sign_out_guests_at_midnight')) {
-            wp_schedule_event(strtotime('midnight'), 'daily', 'auto_sign_out_guests_at_midnight');
+            wp_schedule_event($midnight_utc, 'daily', 'auto_sign_out_guests_at_midnight');
         }
+
+        // First day of next month at 00:00 local
+        $first_next_month_local = strtotime('first day of next month 00:00:00', current_time('timestamp'));
+        $first_next_month_utc   = $first_next_month_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
         if (!wp_next_scheduled('reset_monthly_guest_limits')) {
-            wp_schedule_event(strtotime('first day of next month 00:00:00'), 'monthly', 'reset_monthly_guest_limits');
+            wp_schedule_event($first_next_month_utc, 'monthly', 'reset_monthly_guest_limits');
         }
+
+        // Jan 1 next year at 00:00 local
+        $jan_first_local = strtotime('January 1 next year 00:00:00', current_time('timestamp'));
+        $jan_first_utc   = $jan_first_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
         if (!wp_next_scheduled('reset_yearly_guest_limits')) {
-            wp_schedule_event(strtotime('January 1 next year 00:00:00'), 'yearly', 'reset_yearly_guest_limits');
+            wp_schedule_event($jan_first_utc, 'yearly', 'reset_yearly_guest_limits');
         }
     }
 
     private static function deactivate_cron_jobs(): void
     {
+        wp_clear_scheduled_hook('schedule_sms_balance_cron');
         wp_clear_scheduled_hook('auto_update_visit_status_at_midnight');
         wp_clear_scheduled_hook('auto_sign_out_guests_at_midnight');
         wp_clear_scheduled_hook('reset_monthly_guest_limits');

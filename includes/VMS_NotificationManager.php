@@ -56,8 +56,7 @@ class VMS_NotificationManager
     private static function setup_hooks(): void
     {
         add_action('wp_ajax_refresh_sms_balance', [self::class, 'refresh_sms_balance']);
-        add_action('sms_balance_cron', [self::class, 'fetch_and_save_sms_balance']);
-        // add_action('init', [self::class, 'schedule_sms_balance_cron']);
+        add_action('schedule_sms_balance_cron', [self::class, 'refresh_sms_balance']);
     }
 
 
