@@ -423,7 +423,7 @@ class VMS_CoreManager
     }
 
     /**
-     * Handle guest registration via AJAX - UPDATED
+     * Handle guest registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
     public function handle_guest_registration(): void
     {
@@ -623,6 +623,29 @@ class VMS_CoreManager
             $guest_id
         ));
 
+        // Send email notifications
+        $this->send_guest_registration_emails(
+            $guest_id,
+            $first_name,
+            $last_name,
+            $email,
+            $receive_emails,
+            $host_member,
+            $visit_date,
+            $preliminary_status
+        );
+        
+        // Send SMS notifications
+        $this->send_guest_registration_sms(
+            $guest_id,
+            $first_name,
+            $last_name,
+            $phone_number,
+            $receive_messages,
+            $host_member,
+            $visit_date,
+            $preliminary_status
+        );
         // Prepare guest data for JS
         $guest_data = [
             'id'              => $guest_id,
@@ -649,8 +672,8 @@ class VMS_CoreManager
         ]);
     }
 
-        /**
-     * Handle guest registration via AJAX - UPDATED
+    /**
+     * Handle courtesy guest registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
     public function handle_courtesy_guest_registration(): void
     {
@@ -671,7 +694,6 @@ class VMS_CoreManager
         $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
         $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
         $courtesy         = 'Courtesy';
-
 
         // Validate required fields
         if (empty($first_name)) $errors[] = 'First name is required';
@@ -783,6 +805,29 @@ class VMS_CoreManager
             $guest_id
         ));
 
+        // Send email notifications for courtesy guest (no host)
+        $this->send_courtesy_guest_registration_emails(
+            $guest_id,
+            $first_name,
+            $last_name,
+            $email,
+            $receive_emails,
+            $visit_date,
+            $preliminary_status
+        );
+
+        // Send SMS notifications
+        $this->send_courtesy_guest_registration_sms(
+            $guest_id,
+            $first_name,
+            $last_name,
+            $phone_number,
+            $receive_messages,
+            $visit_date,
+            $preliminary_status
+        );
+
+        
         // Prepare guest data for JS
         $guest_data = [
             'id'              => $guest_id,
@@ -809,7 +854,7 @@ class VMS_CoreManager
     }
 
     /**
-     * Handle visit registration via AJAX - UPDATED
+     * Handle visit registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
     public function handle_visit_registration() 
     {
@@ -835,9 +880,10 @@ class VMS_CoreManager
         }
 
         // Validate host
+        $host_member = null;
         if ($host_member_id) {
-            $host_user = get_userdata($host_member_id);
-            if (!$host_user) {
+            $host_member = get_userdata($host_member_id);
+            if (!$host_member) {
                 $errors[] = 'Invalid host member selected';
             }
         }
@@ -858,6 +904,14 @@ class VMS_CoreManager
         }
 
         $table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get guest info for emails
+        $guest_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT first_name, last_name, email, phone_number, receive_emails, receive_messages 
+            FROM $guests_table WHERE id = %d",
+            $guest_id
+        ));
 
         // Prevent duplicate visit on same date (except cancelled)
         $existing_visit = $wpdb->get_row($wpdb->prepare(
@@ -869,7 +923,6 @@ class VMS_CoreManager
         if ($existing_visit && $existing_visit->status !== 'cancelled') {
             wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
         }
-
 
         // Monthly and yearly limits: count only approved visits and past sign-ins
         $month_start = date('Y-m-01', strtotime($visit_date));
@@ -909,14 +962,17 @@ class VMS_CoreManager
         }
 
         // Check host daily limit (only count approved visits for today and future)
-        $host_approved_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $table 
-            WHERE host_member_id = %d AND visit_date = %s 
-            AND (status = 'approved' OR (visit_date < %s AND sign_in_time IS NOT NULL))",
-            $host_member_id,
-            $visit_date,
-            $today
-        ));
+        $host_approved_count = 0;
+        if ($host_member_id) {
+            $host_approved_count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $table 
+                WHERE host_member_id = %d AND visit_date = %s 
+                AND (status = 'approved' OR (visit_date < %s AND sign_in_time IS NOT NULL))",
+                $host_member_id,
+                $visit_date,
+                $today
+            ));
+        }
 
         // Determine preliminary status
         $preliminary_status = 'approved';
@@ -927,7 +983,7 @@ class VMS_CoreManager
         }
         
         // If host daily limit would be exceeded, mark as unapproved
-        if (($host_approved_count + 1) > 4) {
+        if ($host_member_id && ($host_approved_count + 1) > 4) {
             $preliminary_status = 'unapproved';
         }
 
@@ -973,7 +1029,58 @@ class VMS_CoreManager
             $visit_id = $wpdb->insert_id;
         }
 
-        $visit    = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
+        // Send notifications
+        if ($guest_info) {
+            if ($courtesy === 'Courtesy') {
+                // Email
+                $this->send_courtesy_visit_registration_emails(
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->email,
+                    $guest_info->receive_emails,
+                    $visit_date,
+                    $preliminary_status
+                );
+
+                // SMS
+                $this->send_courtesy_visit_registration_sms(
+                    $guest_id,
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->phone_number,
+                    $guest_info->receive_messages,
+                    $visit_date,
+                    $preliminary_status
+                );
+
+            } else {
+                // Email
+                $this->send_visit_registration_emails(
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->email,
+                    $guest_info->receive_emails,
+                    $host_member,
+                    $visit_date,
+                    $preliminary_status
+                );
+
+                // SMS
+                $this->send_visit_registration_sms(
+                    $guest_id,
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->phone_number,
+                    $guest_info->receive_messages,
+                    $host_member,
+                    $visit_date,
+                    $preliminary_status
+                );
+            }
+        }
+
+
+        $visit = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
 
         // Host display name
         $host_display = 'N/A';
@@ -1003,6 +1110,340 @@ class VMS_CoreManager
             'status_text'   => $status_text,
             'messages'      => ['Visit registered successfully']
         ]);
+    }
+
+    /**
+     * Send SMS notifications for guest registration with host
+     */
+    private function send_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status) 
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
+        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
+
+        // Send SMS to guest if opted in
+        if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
+            $guest_message = "Nyeri Club: Dear " . $first_name . ",\nYour visit on $formatted_date with host $host_first_name $host_last_name is $status_text.";
+            if ($status === 'approved') {
+                $guest_message .= " Please carry a valid ID.";
+            } else {
+                $guest_message .= " You will be notified once approved.";
+            }
+
+            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+        }
+
+        // Send SMS to host if opted in
+        if ($host_member) {
+            $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
+            $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
+            $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
+
+            if ($host_receive_messages === 'yes' && !empty($host_phone)) {
+                $host_message = "Nyeri Club: Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
+                if ($status === 'approved') {
+                    $host_message .= " Please be available to receive them.";
+                } else {
+                    $host_message .= " Pending approval due to limits.";
+                }
+
+                VMS_NotificationManager::send_sms($host_phone, $host_message, $host_member->ID);
+            }
+        }
+    }
+
+    /**
+     * Send email notifications for guest registration with host
+     */
+    private function send_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
+        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
+        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
+
+        // Send email to guest if they opted in
+        if ($guest_receive_emails === 'yes') {
+            $guest_subject = 'Visit Registration Confirmation - Nyeri Club';
+            
+            $guest_message = "Dear " . $first_name . ",\n\n";
+            $guest_message .= "Your visit to Nyeri Club has been registered successfully.\n\n";
+            $guest_message .= "Visit Details:\n";
+            $guest_message .= "Date: " . $formatted_date . "\n";
+            $guest_message .= "Host: " . $host_first_name . " " . $host_last_name . "\n";
+            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
+            
+            if ($status === 'approved') {
+                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
+            } else {
+                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
+            }
+            
+            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
+            $guest_message .= "Best regards,\n";
+            $guest_message .= "Nyeri Club Visitor Management System";
+
+            error_log($guest_message);
+
+            wp_mail($guest_email, $guest_subject, $guest_message);
+        }
+
+        // Send email to host if they opted in to receive emails
+        if ($host_member) {
+            $host_receive_emails = get_user_meta($host_member->ID, 'receive_emails', true);
+            $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
+            $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);            
+            
+            if ($host_receive_emails === 'yes') {
+                $host_subject = 'New Guest Registration - Nyeri Club';
+                
+                $host_message = "Dear " . $host_first_name . " " . $host_last_name . ",\n\n";
+                $host_message .= "A guest has registered for a visit with you as their host.\n\n";
+                $host_message .= "Guest Details:\n";
+                $host_message .= "Name: " . $first_name . " " . $last_name . "\n";
+                $host_message .= "Visit Date: " . $formatted_date . "\n";
+                $host_message .= "Status: " . ucfirst($status_text) . "\n\n";
+                
+                if ($status === 'approved') {
+                    $host_message .= "The visit has been approved. Please ensure you are available to receive your guest.\n\n";
+                } else {
+                    $host_message .= "The visit is pending approval due to capacity limits.\n\n";
+                }
+                
+                $host_message .= "Best regards,\n";
+                $host_message .= "Nyeri Club Visitor Management System";
+
+                error_log($host_message);
+
+                wp_mail($host_member->user_email, $host_subject, $host_message);
+            }
+        }
+    }
+    
+    /**
+     * Send SMS notifications for courtesy guest registration (no host involved)
+     */
+    private function send_courtesy_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $visit_date, $status ): void 
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+
+        // Send SMS to courtesy guest if opted in
+        if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
+            $guest_message  = "Nyeri Club: Dear {$first_name},\n";
+            $guest_message .= "Your courtesy visit on {$formatted_date} is {$status_text}.";
+
+            if ($status === 'approved') {
+                $guest_message .= " Please carry a valid ID.";
+            } else {
+                $guest_message .= " You will be notified once approved.";
+            }
+
+            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+        }
+    }
+
+
+    /**
+     * Send email notifications for courtesy guest registration (no host)
+     */
+    private function send_courtesy_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
+
+        // Send email to guest if they opted in
+        if ($guest_receive_emails === 'yes') {
+            $guest_subject = 'Courtesy Visit Registration Confirmation - Nyeri Club';
+            
+            $guest_message = "Dear " . $first_name . ",\n\n";
+            $guest_message .= "Your courtesy visit to Nyeri Club has been registered successfully.\n\n";
+            $guest_message .= "Visit Details:\n";
+            $guest_message .= "Date: " . $formatted_date . "\n";
+            $guest_message .= "Type: Courtesy Visit\n";
+            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
+            
+            if ($status === 'approved') {
+                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
+            } else {
+                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
+            }
+            
+            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
+            $guest_message .= "Best regards,\n";
+            $guest_message .= "Nyeri Club Visitor Management System";
+
+            error_log($guest_message);
+
+            wp_mail($guest_email, $guest_subject, $guest_message);
+        }
+
+        // Send email to admin for courtesy visits
+        $admin_email = get_option('admin_email');
+        $admin_subject = 'New Courtesy Guest Registration - Nyeri Club';
+        
+        $admin_message = "Hello Admin,\n\n";
+        $admin_message .= "A new courtesy guest has registered:\n\n";
+        $admin_message .= "Guest Details:\n";
+        $admin_message .= "Name: " . $first_name . " " . $last_name . "\n";
+        $admin_message .= "Email: " . $guest_email . "\n";
+        $admin_message .= "Visit Date: " . $formatted_date . "\n";
+        $admin_message .= "Type: Courtesy Visit\n";
+        $admin_message .= "Status: " . ucfirst($status_text) . "\n\n";
+        $admin_message .= "Please review this registration in the system.\n\n";
+        $admin_message .= "Nyeri Club Visitor Management System";
+
+        error_log($admin_message);
+
+        wp_mail($admin_email, $admin_subject, $admin_message);
+    }
+
+    private function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
+    {
+        if ($guest_receive_messages !== 'yes' || empty($guest_phone)) {
+            return;
+        }
+
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+
+        $guest_message  = "Nyeri Club: Dear {$first_name},\n";
+        $guest_message .= "Your visit on {$formatted_date} is {$status_text}.";
+
+        if ($host_member) {
+            $host_name = trim(get_user_meta($host_member->ID, 'first_name', true) . ' ' . get_user_meta($host_member->ID, 'last_name', true));
+            if (!$host_name) {
+                $host_name = $host_member->user_login;
+            }
+            $guest_message .= " Hosted by {$host_name}.";
+        }
+
+        if ($status === 'approved') {
+            $guest_message .= " Please carry a valid ID.";
+        } else {
+            $guest_message .= " You will be notified once approved.";
+        }
+
+        VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+    }
+
+    /**
+     * Send email notifications for visit registration
+     */
+    private function send_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
+        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
+        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
+
+        // Send email to guest if they opted in
+        if ($guest_receive_emails === 'yes') {
+            $guest_subject = 'Visit Registration Confirmation - Nyeri Club';
+            
+            $guest_message = "Dear " . $guest_first_name . ",\n\n";
+            $guest_message .= "Your visit to Nyeri Club has been registered successfully.\n\n";
+            $guest_message .= "Visit Details:\n";
+            $guest_message .= "Date: " . $formatted_date . "\n";
+            if ($host_member) {
+                $guest_message .= "Host: " . $host_first_name . " " . $host_last_name . "\n";
+            }
+            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
+            
+            if ($status === 'approved') {
+                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
+            } else {
+                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
+            }
+            
+            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
+            $guest_message .= "Best regards,\n";
+            $guest_message .= "Nyeri Club Visitor Management System";
+
+            error_log($guest_message);
+
+            wp_mail($guest_email, $guest_subject, $guest_message);
+        }
+
+        // Send email to host if they opted in to receive emails
+        if ($host_member) {
+            $host_receive_emails = get_user_meta($host_member->ID, 'receive_emails', true);
+            
+            if ($host_receive_emails === 'yes') {
+                $host_subject = 'New Visit Registration - Nyeri Club';
+                
+                $host_message = "Dear " . $host_first_name . " " . $host_last_name . ",\n\n";
+                $host_message .= "A visit has been registered with you as the host.\n\n";
+                $host_message .= "Guest Details:\n";
+                $host_message .= "Name: " . $guest_first_name . " " . $guest_last_name . "\n";
+                $host_message .= "Visit Date: " . $formatted_date . "\n";
+                $host_message .= "Status: " . ucfirst($status_text) . "\n\n";
+                
+                if ($status === 'approved') {
+                    $host_message .= "The visit has been approved. Please ensure you are available to receive your guest.\n\n";
+                } else {
+                    $host_message .= "The visit is pending approval due to capacity limits.\n\n";
+                }
+                
+                $host_message .= "Best regards,\n";
+                $host_message .= "Nyeri Club Visitor Management System";
+
+                error_log($host_message);
+
+                wp_mail($host_member->user_email, $host_subject, $host_message);
+            }
+        }
+    }
+
+    /**
+     * Send email notifications for courtesy visit registration (no host)
+     */
+    private function send_courtesy_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
+
+        // Send email to guest if they opted in
+        if ($guest_receive_emails === 'yes') {
+            $guest_subject = 'Courtesy Visit Registration Confirmation - Nyeri Club';
+            
+            $guest_message = "Dear " . $guest_first_name . ",\n\n";
+            $guest_message .= "Your courtesy visit to Nyeri Club has been registered successfully.\n\n";
+            $guest_message .= "Visit Details:\n";
+            $guest_message .= "Date: " . $formatted_date . "\n";
+            $guest_message .= "Type: Courtesy Visit\n";
+            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
+            
+            if ($status === 'approved') {
+                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
+            } else {
+                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
+            }
+            
+            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
+            $guest_message .= "Best regards,\n";
+            $guest_message .= "Nyeri Club Visitor Management System";
+
+            wp_mail($guest_email, $guest_subject, $guest_message);
+        }
+
+        // Send email to admin for courtesy visits
+        $admin_email = get_option('admin_email');
+        $admin_subject = 'New Courtesy Visit Registration - Nyeri Club';
+        
+        $admin_message = "Hello Admin,\n\n";
+        $admin_message .= "A new courtesy visit has been registered:\n\n";
+        $admin_message .= "Guest Details:\n";
+        $admin_message .= "Name: " . $guest_first_name . " " . $guest_last_name . "\n";
+        $admin_message .= "Email: " . $guest_email . "\n";
+        $admin_message .= "Visit Date: " . $formatted_date . "\n";
+        $admin_message .= "Type: Courtesy Visit\n";
+        $admin_message .= "Status: " . ucfirst($status_text) . "\n\n";
+        $admin_message .= "Please review this registration in the system.\n\n";
+        $admin_message .= "Nyeri Club Visitor Management System";
+
+        wp_mail($admin_email, $admin_subject, $admin_message);
     }
 
     /**

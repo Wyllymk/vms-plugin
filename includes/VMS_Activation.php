@@ -88,6 +88,7 @@ class VMS_Activation
         self::create_reciprocating_members_table();
         self::create_reciprocating_clubs_table();
         self::create_guest_visits_table();
+        self::create_sms_logs_table();
     }
 
     private static function create_guests_table(): void
@@ -224,6 +225,39 @@ class VMS_Activation
         dbDelta($sql);
     }
 
+    /**
+     * Create SMS logs table
+     */
+    private static function create_sms_logs_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS);
+
+        $sql = "CREATE TABLE $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT(20) UNSIGNED DEFAULT NULL,
+            recipient_number VARCHAR(20) NOT NULL,
+            message TEXT NOT NULL,
+            message_id VARCHAR(255) DEFAULT NULL,
+            status ENUM('sent','failed','queued','delivered','expired') NOT NULL DEFAULT 'queued',
+            cost DECIMAL(10,2) DEFAULT NULL,
+            response_data TEXT DEFAULT NULL,
+            error_message TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY recipient_number (recipient_number),
+            KEY message_id (message_id),
+            KEY status (status),
+            KEY created_at (created_at)
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
     private static function activate_cron_jobs(): void
     {
         if (!wp_next_scheduled('auto_update_visit_status_at_midnight')) {
@@ -260,6 +294,7 @@ class VMS_Activation
         $tables = [            
             VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE),
             VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
             VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
             VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE)
         ];

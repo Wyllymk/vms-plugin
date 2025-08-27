@@ -1,6 +1,6 @@
 <?php
 /**
- * Handles all Cyber Wakili notification-related functionality
+ * Handles all VMS notification-related functionality
  * 
  * @package WyllyMk\VMS
  * @since 1.0.0
@@ -23,10 +23,10 @@ class VMS_NotificationManager
     private static $instance = null;
 
     /**
-     * MobileSASA API base URL
+     * SMS Leopard API base URL
      * @var string
      */
-    private $api_base_url = 'https://api.mobilesasa.com/v1';
+    private static $api_base_url = 'https://api.smsleopard.com/v1';
 
     /**
      * Get singleton instance
@@ -45,215 +45,282 @@ class VMS_NotificationManager
      */
     public function init(): void
     {
-        $this->setup_sms_balance_cron();
+        self::setup_hooks();
         // Uncomment when ready to use task notifications
         // add_action('save_post_task', [$this, 'handle_task_notification'], 10, 3);
     }
 
     /**
-     * Setup SMS balance cron job
+     * Setup hooks
      */
-    private function setup_sms_balance_cron(): void
+    private static function setup_hooks(): void
     {
-        add_action('mobilesasa_sms_balance_cron', [$this, 'fetch_and_save_sms_balance']);
-        add_action('init', [$this, 'schedule_sms_balance_cron']);
+        add_action('wp_ajax_refresh_sms_balance', [self::class, 'refresh_sms_balance']);
+        add_action('sms_balance_cron', [self::class, 'fetch_and_save_sms_balance']);
+        // add_action('init', [self::class, 'schedule_sms_balance_cron']);
     }
 
-    /**
-     * Send task assignment notification
-     */
-    public function handle_task_notification(int $post_id, \WP_Post $post, bool $update): void
-    {
-        if (wp_is_post_revision($post_id)) {
-            return;
-        }
-
-        $assignee_id = get_post_meta($post_id, '_task_assignee', true);
-        if (!$assignee_id) {
-            return;
-        }
-
-        $assignee = get_userdata($assignee_id);
-        if (!$assignee) {
-            return;
-        }
-
-        $subject = sprintf(
-            __('New Task Assigned: %s', 'vms'),
-            get_the_title($post_id)
-        );
-
-        $message = sprintf(
-            __("Dear %s,\n\nYou have been assigned a new task: %s.\n\nDue Date: %s\n\nView it here: %s\n\nBest regards,\nCyber Wakili", 'vms'),
-            $assignee->display_name,
-            get_the_title($post_id),
-            get_post_meta($post_id, '_task_due_date', true),
-            get_permalink($post_id)
-        );
-
-        wp_mail($assignee->user_email, $subject, $message);
-    }
 
     /**
-     * Send SMS message
+     * Send SMS message using SMS Leopard API
      */
-    public function send_sms(string $phone, string $message): ?array
+    public static function send_sms(string $phone, string $message, ?int $user_id = null): ?array
     {
-        global $wpdb;
+        $api_key = get_option('vms_sms_api_key', '');
+        $api_secret = get_option('vms_sms_api_secret', '');
+        $sender_id = get_option('vms_sms_sender_id', 'SMS_Leopard');
+        $status_url = get_option('vms_status_url', '');
+        $status_secret = get_option('vms_status_secret', '');
 
-        $sender_id = get_option('mobilesasa_sender_id', '');
-        $api_token = get_option('mobilesasa_api_token', '');
+        if (empty($api_key) || empty($api_secret)) {
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, 'API credentials not configured');
+            return null;
+        }
 
-        $clean_phone = $this->clean_phone_number($phone);
-        $endpoint = $this->api_base_url . '/send/message';
+        $clean_phone = self::clean_phone_number($phone);
+        $auth = base64_encode($api_key . ':' . $api_secret);
+        $clean_phone = self::clean_phone_number($phone);
 
-        $response = wp_remote_post($endpoint, [
+        error_log('Sending SMS to: ' . $clean_phone);
+        error_log('Message: ' . $message);
+        error_log('Sender ID: ' . $sender_id);
+        error_log('Status URL: ' . $status_url);
+        error_log('Status Secret: ' . $status_secret);
+
+
+        $payload = [
+            'source' => $sender_id,
+            'message' => $message,
+            'destination' => [
+                ['number' => $clean_phone]
+            ]
+        ];
+
+        // Add optional status callback
+        if (!empty($status_url)) {
+            $payload['status_url'] = $status_url;
+            if (!empty($status_secret)) {
+                $payload['status_secret'] = $status_secret;
+            }
+        }
+
+        $response = wp_remote_post(self::$api_base_url . '/sms/send', [
             'headers' => [
-                'Content-Type' => 'application/x-www-form-urlencoded',
+                'Authorization' => 'Basic ' . $auth,
+                'Content-Type' => 'application/json'
             ],
-            'body' => [
-                'senderID' => $sender_id,
-                'message' => $message,
-                'phone' => $clean_phone,
-                'api_token' => $api_token,
-            ],
+            'body' => json_encode($payload),
             'timeout' => 30
         ]);
 
         if (is_wp_error($response)) {
-            error_log('SMS API Error: ' . $response->get_error_message());
+            $error_message = $response->get_error_message();
+            error_log('SMS API Error: ' . $error_message);
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
             return null;
         }
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
-        if (!$data || !isset($data['status'])) {
-            error_log('Invalid SMS API response: ' . $body);
+        if (!$data) {
+            $error_message = 'Invalid API response: ' . $body;
+            error_log($error_message);
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
             return null;
         }
 
-        $status = $data['status'] ? 'Sent' : 'Failed';
-        $user_id = $this->get_user_id_by_phone($phone);
+        // Process response
+        if (isset($data['success']) && $data['success'] === true) {
+            $recipient = $data['recipients'][0] ?? [];
+            $message_id = $recipient['id'] ?? '';
+            $cost = $recipient['cost'] ?? 0;
+            $status = $recipient['status'] ?? 'sent';
 
-        $this->log_sms_message(
-            $user_id,
-            $phone,
-            $message,
-            $data['messageId'] ?? '',
-            $status
-        );
-
-        return [
-            'status' => $data['status'],
-            'responseCode' => $data['responseCode'] ?? '',
-            'message' => $data['message'] ?? '',
-            'messageId' => $data['messageId'] ?? ''
-        ];
+            self::log_sms_message($user_id, $phone, $message, $message_id, $status, $cost, $data);
+            
+            return [
+                'success' => true,
+                'message_id' => $message_id,
+                'cost' => $cost,
+                'status' => $status,
+                'response' => $data['message'] ?? 'SMS sent successfully'
+            ];
+        } else {
+            $error_message = $data['message'] ?? 'Unknown error occurred';
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, $data, $error_message);
+            
+            return [
+                'success' => false,
+                'error' => $error_message,
+                'response_code' => $data['responseCode'] ?? 'UNKNOWN'
+            ];
+        }
     }
 
     /**
-     * Clean and format phone number
+     * Send SMS to multiple recipients
      */
-    public function clean_phone_number(string $phone): string
+    public static function send_bulk_sms(array $recipients, string $message): array
+    {
+        $results = [];
+        foreach ($recipients as $recipient) {
+            $phone = $recipient['phone'] ?? $recipient;
+            $user_id = $recipient['user_id'] ?? null;
+            
+            $result = self::send_sms($phone, $message, $user_id);
+            $results[] = [
+                'phone' => $phone,
+                'result' => $result
+            ];
+            
+            // Small delay to prevent rate limiting
+            usleep(100000); // 0.1 seconds
+        }
+        
+        return $results;
+    }
+
+    /**
+     * Clean and format phone number for Kenyan numbers
+     */
+    public static function clean_phone_number(string $phone): string
     {
         $digits = preg_replace('/[^0-9]/', '', $phone);
-        if (strpos($digits, '0') === 0) {
+        
+        // Handle Kenyan numbers
+        if (strpos($digits, '0') === 0 && strlen($digits) === 10) {
             return '254' . substr($digits, 1);
         }
-        if (strpos($digits, '254') !== 0) {
-            return '254' . substr($digits, -9);
+        
+        if (strpos($digits, '254') === 0) {
+            return $digits;
         }
+        
+        // Default: assume Kenyan number without prefix
+        if (strlen($digits) === 9) {
+            return '254' . $digits;
+        }
+        
         return $digits;
-    }
-
-    /**
-     * Get user ID by phone number
-     */
-    private function get_user_id_by_phone(string $phone): ?int
-    {
-        global $wpdb;
-        return $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'phone_number' AND meta_value = %s LIMIT 1",
-                $phone
-            )
-        );
     }
 
     /**
      * Log SMS message to database
      */
-    private function log_sms_message(?int $user_id, string $phone, string $message, string $message_id, string $status): bool
-    {
+    private static function log_sms_message(
+        ?int $user_id, 
+        string $phone, 
+        string $message, 
+        ?string $message_id, 
+        string $status, 
+        float $cost = 0, 
+        ?array $response_data = null, 
+        ?string $error_message = null
+    ): bool {
         global $wpdb;
+        
         return (bool) $wpdb->insert(
-            $wpdb->prefix . 'mobilesasa_messages',
+            $wpdb->prefix . 'vms_sms_logs',
             [
                 'user_id' => $user_id,
-                'phone_number' => $phone,
+                'recipient_number' => $phone,
                 'message' => $message,
                 'message_id' => $message_id,
-                'sent_at' => current_time('mysql'),
-                'status' => $status
+                'status' => $status,
+                'cost' => $cost,
+                'response_data' => $response_data ? json_encode($response_data) : null,
+                'error_message' => $error_message
             ],
-            ['%d', '%s', '%s', '%s', '%s', '%s']
+            ['%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s']
         );
     }
 
     /**
-     * Fetch and save SMS balance
+     * Get delivery report for a message
      */
-    public function fetch_and_save_sms_balance(): void
+    public static function get_delivery_report(string $message_id): ?array
     {
-        $api_token = get_option('mobilesasa_api_token', '');
-        if (empty($api_token)) {
-            error_log('MobileSASA API token not configured');
-            return;
+        $api_key = get_option('vms_sms_api_key', '');
+        $api_secret = get_option('vms_sms_api_secret', '');
+
+        if (empty($api_key) || empty($api_secret) || empty($message_id)) {
+            return null;
         }
 
-        $response = wp_remote_get($this->api_base_url . '/get-balance', [
+        $auth = base64_encode($api_key . ':' . $api_secret);
+
+        $response = wp_remote_get(self::$api_base_url . '/sms/' . urlencode($message_id) . '/status', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $api_token,
-                'Accept' => 'application/json'
+                'Authorization' => 'Basic ' . $auth,
+                'Content-Type'  => 'application/json'
             ],
-            'timeout' => 15
+            'timeout' => 30
         ]);
 
         if (is_wp_error($response)) {
-            error_log('Error fetching SMS balance: ' . $response->get_error_message());
-            return;
+            error_log('Delivery Report Error: ' . $response->get_error_message());
+            return null;
         }
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
-        if (!empty($data['status']) && $data['status'] === true) {
-            update_option('mobilesasa_sms_balance', $data['balance']);
-            update_option('mobilesasa_last_check', current_time('mysql'));
-        } else {
-            error_log('Failed to retrieve SMS balance. Response: ' . $body);
+        if (!$data) {
+            error_log('Invalid delivery report response: ' . $body);
+            return null;
         }
+
+        return $data;
     }
 
     /**
-     * Schedule SMS balance cron job
+     * Get SMS Leopard account balance
      */
-    public function schedule_sms_balance_cron(): void
+    public static function refresh_sms_balance(): void
     {
-        if (!wp_next_scheduled('mobilesasa_sms_balance_cron')) {
-            wp_schedule_event(time(), 'hourly', 'mobilesasa_sms_balance_cron');
-        }
-    }
+        check_ajax_referer('refresh_balance_nonce', 'nonce');
 
-    /**
-     * Clear SMS balance cron job
-     */
-    public function clear_sms_balance_cron(): void
-    {
-        $timestamp = wp_next_scheduled('mobilesasa_sms_balance_cron');
-        if ($timestamp) {
-            wp_unschedule_event($timestamp, 'mobilesasa_sms_balance_cron');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
         }
+
+        $api_key = get_option('vms_sms_api_key', '');
+        $api_secret = get_option('vms_sms_api_secret', '');
+
+        if (empty($api_key) || empty($api_secret)) {
+            wp_send_json_error('API credentials not configured');
+        }
+
+        $auth = base64_encode($api_key . ':' . $api_secret);
+
+        $response = wp_remote_get('https://api.smsleopard.com/v1/balance', [
+            'headers' => [
+                'Authorization' => 'Basic ' . $auth,
+                'Content-Type'  => 'application/json'
+            ],
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error($response->get_error_message());
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (!$data || !isset($data['balance'])) {
+            wp_send_json_error('Invalid API response');
+        }
+
+        // Save latest balance & timestamp in options
+        update_option('vms_sms_balance', $data['balance']);
+        update_option('vms_sms_last_check', current_time('mysql'));
+
+        wp_send_json_success([
+            'balance'     => $data['balance'],
+            'currency'    => $data['currency'] ?? 'KES',
+            'last_check'  => current_time('mysql')
+        ]);
     }
 }
