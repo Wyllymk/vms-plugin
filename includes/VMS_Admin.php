@@ -47,7 +47,6 @@ class VMS_Admin
         add_action('admin_init', [$this, 'register_settings']);
         add_filter('plugin_action_links_' . VMS_PLUGIN_BASENAME, [$this, 'add_settings_link']);
         add_action('admin_notices', [$this, 'show_admin_notices']);
-        add_action('wp_ajax_test_sms_connection', [$this, 'test_sms_connection']);
     }
 
     /**
@@ -257,7 +256,8 @@ class VMS_Admin
 
     <!-- Balance Card -->
     <div class="postbox" style="margin-top: 20px;">
-        <h2 class="hndle"><span><?php esc_html_e('SMS Balance', 'vms'); ?></span></h2>
+        <h2 class="hndle" style="margin-inline-start: 10px;"><span><?php esc_html_e('SMS Balance', 'vms'); ?></span>
+        </h2>
         <div class="inside">
             <p><strong><?php esc_html_e('Current Balance:', 'vms'); ?></strong> KES
                 <?php echo esc_html(number_format($balance, 2)); ?></p>
@@ -510,48 +510,5 @@ class VMS_Admin
 </p>
 <?php
     }
-
-    /**
-     * Test SMS connection
-     */
-    public function test_sms_connection(): void
-    {
-        check_ajax_referer('test_connection_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-
-        $api_key = get_option('vms_sms_api_key', '');
-        $api_secret = get_option('vms_sms_api_secret', '');
-
-        if (empty($api_key) || empty($api_secret)) {
-            wp_send_json_error('API credentials not configured');
-        }
-
-        $auth = base64_encode($api_key . ':' . $api_secret);
-        
-        $response = wp_remote_get('https://api.smsleopard.com/v1/balance', [
-            'headers' => [
-                'Authorization' => 'Basic ' . $auth,
-                'Content-Type' => 'application/json'
-            ],
-            'timeout' => 15
-        ]);
-
-        if (is_wp_error($response)) {
-            wp_send_json_error($response->get_error_message());
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (isset($data['balance'])) {
-            update_option('vms_sms_balance', $data['balance']);
-            update_option('vms_sms_last_check', current_time('mysql'));
-            wp_send_json_success('Connection successful! Balance: KES ' . number_format($data['balance'], 2));
-        } else {
-            wp_send_json_error('Invalid API response');
-        }
-    }
+    
 }

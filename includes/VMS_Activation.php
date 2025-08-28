@@ -266,8 +266,8 @@ class VMS_Activation
         // Convert to UTC for cron storage
         $midnight_utc = $midnight_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
 
-        if (!wp_next_scheduled('schedule_sms_balance_cron')) {
-            wp_schedule_event($midnight_utc, 'daily', 'schedule_sms_balance_cron');
+        if (!wp_next_scheduled('sms_balance_cron')) {
+            wp_schedule_event(time(), 'hourly', 'sms_balance_cron');
         }
         if (!wp_next_scheduled('auto_update_visit_status_at_midnight')) {
             wp_schedule_event($midnight_local, 'daily', 'auto_update_visit_status_at_midnight');
@@ -293,7 +293,7 @@ class VMS_Activation
 
     private static function deactivate_cron_jobs(): void
     {
-        wp_clear_scheduled_hook('schedule_sms_balance_cron');
+        wp_clear_scheduled_hook('sms_balance_cron');
         wp_clear_scheduled_hook('auto_update_visit_status_at_midnight');
         wp_clear_scheduled_hook('auto_sign_out_guests_at_midnight');
         wp_clear_scheduled_hook('reset_monthly_guest_limits');
