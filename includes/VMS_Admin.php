@@ -45,8 +45,12 @@ class VMS_Admin
     {
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
+        add_action('admin_init', [$this, 'setup_auto_config']);
         add_filter('plugin_action_links_' . VMS_PLUGIN_BASENAME, [$this, 'add_settings_link']);
         add_action('admin_notices', [$this, 'show_admin_notices']);
+        add_action('wp_ajax_refresh_sms_balance', [$this, 'ajax_refresh_balance']);
+        add_action('wp_ajax_test_sms_connection', [$this, 'ajax_test_connection']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
     }
 
     /**
@@ -196,12 +200,45 @@ class VMS_Admin
     }
 
     /**
+     * Setup automatic configuration
+     */
+    public function setup_auto_config(): void
+    {
+        $status_url = get_option('vms_status_url', '');
+        $status_secret = get_option('vms_status_secret', '');
+        
+        // Auto-configure callback URL if not set
+        if (empty($status_url)) {
+            $callback_url = home_url('/vms-sms-callback/');
+            update_option('vms_status_url', $callback_url);
+        }
+        
+        // Generate status secret if not set
+        if (empty($status_secret)) {
+            $secret = wp_generate_password(32, false, false);
+            update_option('vms_status_secret', $secret);
+        }
+    }
+
+    /**
+     * Enqueue admin scripts
+     */
+    public function enqueue_admin_scripts($hook): void
+    {
+        if (!in_array($hook, ['toplevel_page_vms-settings', 'vms_page_vms-sms-logs'])) {
+            return;
+        }
+
+        wp_enqueue_script('jquery');
+    }
+
+    /**
      * Show admin notices
      */
     public function show_admin_notices(): void
     {
         $screen = get_current_screen();
-        if ($screen->id !== 'toplevel_page_vms-settings') {
+        if (!$screen || $screen->id !== 'toplevel_page_vms-settings') {
             return;
         }
 
@@ -235,6 +272,84 @@ class VMS_Admin
     }
 
     /**
+     * AJAX handler for refreshing SMS balance
+     */
+    public function ajax_refresh_balance(): void
+    {
+        check_ajax_referer('refresh_balance_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Insufficient permissions.', 'vms'));
+        }
+
+        // Here you would integrate with your SMS service to get balance
+        // For now, return mock data
+        $balance = $this->fetch_sms_balance();
+        
+        if ($balance !== false) {
+            update_option('vms_sms_balance', $balance);
+            update_option('vms_sms_last_check', current_time('mysql'));
+            wp_send_json_success(['balance' => $balance]);
+        } else {
+            wp_send_json_error(__('Failed to fetch balance', 'vms'));
+        }
+    }
+
+    /**
+     * AJAX handler for testing connection
+     */
+    public function ajax_test_connection(): void
+    {
+        check_ajax_referer('test_connection_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Insufficient permissions.', 'vms'));
+        }
+
+        $result = $this->test_sms_connection();
+        
+        if ($result === true) {
+            wp_send_json_success();
+        } else {
+            wp_send_json_error($result);
+        }
+    }
+
+    /**
+     * Fetch SMS balance from API
+     */
+    private function fetch_sms_balance()
+    {
+        $api_key = get_option('vms_sms_api_key', '');
+        $api_secret = get_option('vms_sms_api_secret', '');
+        
+        if (empty($api_key) || empty($api_secret)) {
+            return false;
+        }
+
+        // Implement actual API call here
+        // This is a placeholder
+        return rand(100, 1000);
+    }
+
+    /**
+     * Test SMS connection
+     */
+    private function test_sms_connection()
+    {
+        $api_key = get_option('vms_sms_api_key', '');
+        $api_secret = get_option('vms_sms_api_secret', '');
+        
+        if (empty($api_key) || empty($api_secret)) {
+            return __('API credentials not configured', 'vms');
+        }
+
+        // Implement actual connection test here
+        // This is a placeholder
+        return true;
+    }
+
+    /**
      * Render settings page
      */
     public function render_settings_page(): void
@@ -256,7 +371,8 @@ class VMS_Admin
 
     <!-- Balance Card -->
     <div class="postbox" style="margin-top: 20px;">
-        <h2 class="hndle" style="margin-inline-start: 10px;"><span><?php esc_html_e('SMS Balance', 'vms'); ?></span>
+        <h2 class="hndle" style="margin-inline-start: 10px;">
+            <span><?php esc_html_e('SMS Balance', 'vms'); ?></span>
         </h2>
         <div class="inside">
             <p><strong><?php esc_html_e('Current Balance:', 'vms'); ?></strong> KES
@@ -321,93 +437,22 @@ class VMS_Admin
         });
     });
     </script>
+
+    <style>
+    .postbox {
+        max-width: 800px;
+    }
+
+    .postbox .inside {
+        padding: 12px;
+    }
+
+    .button {
+        margin-right: 10px;
+    }
+    </style>
 </div>
 <?php
-    }
-    /**
-     * Get formatted SMS logs for admin dashboard
-     */
-    function vms_get_sms_logs_formatted(int $limit = 50): array
-    {
-        global $wpdb;
-        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
-        $logs = $wpdb->get_results($wpdb->prepare(
-            "SELECT 
-                id,
-                user_id,
-                recipient_number,
-                LEFT(message, 100) as message_preview,
-                status,
-                cost,
-                error_message,
-                created_at,
-                updated_at
-            FROM {$table_name} 
-            ORDER BY created_at DESC 
-            LIMIT %d",
-            $limit
-        ), ARRAY_A);
-        
-        // Format the data for display
-        foreach ($logs as &$log) {
-            $log['formatted_date'] = date('M j, Y g:i A', strtotime($log['created_at']));
-            $log['status_class'] = vms_get_sms_status_class($log['status']);
-            $log['cost_formatted'] = 'KES ' . number_format($log['cost'], 2);
-            
-            // Get user name if user_id exists
-            if ($log['user_id']) {
-                $user = get_userdata($log['user_id']);
-                $log['user_name'] = $user ? $user->display_name : 'Unknown User';
-            } else {
-                $log['user_name'] = 'System';
-            }
-        }
-        
-        return $logs;
-    }
-
-    /**
-     * Get CSS class for SMS status
-     */
-    function vms_get_sms_status_class(string $status): string
-    {
-        switch (strtolower($status)) {
-            case 'delivered':
-                return 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500';
-            case 'sent':
-            case 'queued':
-                return 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-orange-400';
-            case 'failed':
-            case 'expired':
-            case 'undelivered':
-                return 'bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-500';
-            default:
-                return 'bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-white';
-        }
-    }
-
-    /**
-     * Get human-readable SMS status text
-     */
-    function vms_get_sms_status_text(string $status): string
-    {
-        switch (strtolower($status)) {
-            case 'delivered':
-                return 'Delivered';
-            case 'sent':
-                return 'Sent';
-            case 'queued':
-                return 'Queued';
-            case 'failed':
-                return 'Failed';
-            case 'expired':
-                return 'Expired';
-            case 'undelivered':
-                return 'Undelivered';
-            default:
-                return ucfirst($status);
-        }
     }
 
     /**
@@ -423,21 +468,7 @@ class VMS_Admin
             );
         }
 
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'vms_sms_logs';
-        
-        // Get logs with pagination
-        $per_page = 20;
-        $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-        $offset = ($page - 1) * $per_page;
-
-        $logs = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $table_name ORDER BY created_at DESC LIMIT %d OFFSET %d",
-            $per_page, $offset
-        ));
-
-        $total_logs = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
-        $total_pages = ceil($total_logs / $per_page);
+        $logs = $this->get_sms_logs();
         ?>
 <div class="wrap">
     <h1><?php esc_html_e('SMS Logs', 'vms'); ?></h1>
@@ -446,6 +477,7 @@ class VMS_Admin
         <thead>
             <tr>
                 <th><?php esc_html_e('ID', 'vms'); ?></th>
+                <th><?php esc_html_e('User', 'vms'); ?></th>
                 <th><?php esc_html_e('Recipient', 'vms'); ?></th>
                 <th><?php esc_html_e('Message', 'vms'); ?></th>
                 <th><?php esc_html_e('Status', 'vms'); ?></th>
@@ -457,61 +489,132 @@ class VMS_Admin
             <?php if (!empty($logs)): ?>
             <?php foreach ($logs as $log): ?>
             <tr>
-                <td><?php echo esc_html($log->id); ?></td>
-                <td><?php echo esc_html($log->recipient_number); ?></td>
-                <td><?php echo esc_html(wp_trim_words($log->message, 10)); ?></td>
+                <td><?php echo esc_html($log['id']); ?></td>
+                <td><?php echo esc_html($log['user_name']); ?></td>
+                <td><?php echo esc_html($log['recipient_number']); ?></td>
+                <td title="<?php echo esc_attr($log['message']); ?>">
+                    <?php echo esc_html($log['message_preview']); ?>
+                    <?php if (strlen($log['message']) > 100): ?>...<?php endif; ?>
+                </td>
                 <td>
-                    <span class="status-<?php echo esc_attr(strtolower($log->status)); ?>">
-                        <?php echo esc_html($log->status); ?>
+                    <span class="status-badge <?php echo esc_attr($log['status_class']); ?>">
+                        <?php echo esc_html($this->get_status_text($log['status'])); ?>
                     </span>
                 </td>
-                <td>KES <?php echo esc_html(number_format($log->cost, 2)); ?></td>
-                <td><?php echo esc_html(date('Y-m-d H:i:s', strtotime($log->created_at))); ?></td>
+                <td><?php echo esc_html($log['cost_formatted']); ?></td>
+                <td><?php echo esc_html($log['formatted_date']); ?></td>
             </tr>
             <?php endforeach; ?>
             <?php else: ?>
             <tr>
-                <td colspan="6"><?php esc_html_e('No SMS logs found.', 'vms'); ?></td>
+                <td colspan="7"><?php esc_html_e('No SMS logs found.', 'vms'); ?></td>
             </tr>
             <?php endif; ?>
         </tbody>
     </table>
 
-    <?php if ($total_pages > 1): ?>
-    <div class="tablenav bottom">
-        <div class="tablenav-pages">
-            <?php
-                        echo paginate_links([
-                            'base' => add_query_arg('paged', '%#%'),
-                            'format' => '',
-                            'prev_text' => __('&laquo;'),
-                            'next_text' => __('&raquo;'),
-                            'total' => $total_pages,
-                            'current' => $page
-                        ]);
-                        ?>
-        </div>
-    </div>
-    <?php endif; ?>
-
     <style>
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
     .status-sent {
-        color: #46b450;
-        font-weight: bold;
+        background: #d1e7dd;
+        color: #0a3622;
+    }
+
+    .status-delivered {
+        background: #d1e7dd;
+        color: #0a3622;
     }
 
     .status-failed {
-        color: #dc3232;
-        font-weight: bold;
+        background: #f8d7da;
+        color: #58151c;
     }
 
     .status-queued {
-        color: #ffb900;
-        font-weight: bold;
+        background: #fff3cd;
+        color: #664d03;
+    }
+
+    .status-pending {
+        background: #cff4fc;
+        color: #055160;
     }
     </style>
 </div>
 <?php
+    }
+
+    /**
+     * Get SMS logs with formatting
+     */
+    private function get_sms_logs(int $limit = 50): array
+    {
+        global $wpdb;
+        
+        // Check if table exists
+        $table_name = $wpdb->prefix . 'vms_sms_logs';
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
+            return [];
+        }
+        
+        $logs = $wpdb->get_results($wpdb->prepare(
+            "SELECT 
+                id,
+                user_id,
+                recipient_number,
+                message,
+                status,
+                cost,
+                error_message,
+                created_at
+            FROM {$table_name} 
+            ORDER BY created_at DESC 
+            LIMIT %d",
+            $limit
+        ), ARRAY_A);
+        
+        // Format the data for display
+        foreach ($logs as &$log) {
+            $log['message_preview'] = wp_trim_words($log['message'], 10, '');
+            $log['formatted_date'] = date('M j, Y g:i A', strtotime($log['created_at']));
+            $log['status_class'] = 'status-' . strtolower($log['status']);
+            $log['cost_formatted'] = 'KES ' . number_format($log['cost'], 2);
+            
+            // Get user name if user_id exists
+            if ($log['user_id']) {
+                $user = get_userdata($log['user_id']);
+                $log['user_name'] = $user ? $user->display_name : 'Unknown User';
+            } else {
+                $log['user_name'] = 'System';
+            }
+        }
+        
+        return $logs;
+    }
+
+    /**
+     * Get human-readable SMS status text
+     */
+    private function get_status_text(string $status): string
+    {
+        $statuses = [
+            'delivered' => 'Delivered',
+            'sent' => 'Sent',
+            'queued' => 'Queued',
+            'pending' => 'Pending',
+            'failed' => 'Failed',
+            'expired' => 'Expired',
+            'undelivered' => 'Undelivered'
+        ];
+        
+        return $statuses[strtolower($status)] ?? ucfirst($status);
     }
 
     /**
@@ -595,5 +698,4 @@ class VMS_Admin
 </p>
 <?php
     }
-    
 }
