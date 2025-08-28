@@ -58,17 +58,24 @@ class VMS_NotificationManager
         add_action('sms_balance_cron', [$this, 'fetch_and_save_sms_balance']);
         add_action('wp_ajax_nopriv_vms_status_callback', [$this, 'handle_status_callback']);
         add_action('wp_ajax_vms_status_callback', [$this, 'handle_status_callback']);
+        
+        // NEW: Add SMS delivery status check and cleanup
+        add_action('check_sms_delivery_status', [$this, 'check_pending_sms_delivery']);
+        add_action('cleanup_old_sms_logs', [$this, 'cleanup_old_logs']);
     }
 
+
     /**
-     * Send SMS message using SMS Leopard API
+     * Send SMS message - UPDATED to include callback URL automatically
      */
     public function send_sms(string $phone, string $message, ?int $user_id = null): ?array
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
         $sender_id = get_option('vms_sms_sender_id', 'SMS_Leopard');
-        $status_url = get_option('vms_status_url', '');
+        
+        // Always use our callback URL for status updates
+        $callback_url = $this->get_callback_url();
         $status_secret = get_option('vms_status_secret', '');
 
         if (empty($api_key) || empty($api_secret)) {
@@ -87,9 +94,9 @@ class VMS_NotificationManager
             ]
         ];
 
-        // Add optional status callback
-        if (!empty($status_url)) {
-            $payload['status_url'] = $status_url;
+        // Always add callback URL for status updates
+        if (!empty($callback_url)) {
+            $payload['status_url'] = $callback_url;
             if (!empty($status_secret)) {
                 $payload['status_secret'] = $status_secret;
             }
@@ -173,6 +180,270 @@ class VMS_NotificationManager
     }
 
     /**
+     * NEW: Send guest status change notification (suspended/banned)
+     */
+    public function send_guest_status_notification(array $guest_data, string $old_status, string $new_status): ?array
+    {
+        $phone = $guest_data['phone_number'] ?? '';
+        $name = $guest_data['first_name'] ?? '';
+        $receive_messages = $guest_data['receive_messages'] ?? 'no';
+        
+        if (empty($phone) || $receive_messages !== 'yes') {
+            return null;
+        }
+
+        $message = "Nyeri Club: Dear {$name}, ";
+        
+        switch ($new_status) {
+            case 'suspended':
+                if ($old_status === 'active') {
+                    $message .= "your guest privileges have been temporarily suspended due to visit limit exceeded. Contact reception for assistance.";
+                } else {
+                    $message .= "your guest status has been updated to suspended.";
+                }
+                break;
+                
+            case 'banned':
+                $message .= "your guest privileges have been permanently revoked. Please contact management for clarification.";
+                break;
+                
+            case 'active':
+                if (in_array($old_status, ['suspended', 'banned'])) {
+                    $message .= "your guest privileges have been restored. You can now make new visit requests.";
+                } else {
+                    return null; // No need to notify for normal active status
+                }
+                break;
+                
+            default:
+                return null;
+        }
+        
+        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+    }
+
+    /**
+     * NEW: Send visit status change notification (approved/unapproved)
+     */
+    public function send_visit_status_notification(array $guest_data, array $visit_data, string $old_status, string $new_status): ?array
+    {
+        $phone = $guest_data['phone_number'] ?? '';
+        $name = $guest_data['first_name'] ?? '';
+        $receive_messages = $guest_data['receive_messages'] ?? 'no';
+        $visit_date = date('F j, Y', strtotime($visit_data['visit_date']));
+        
+        if (empty($phone) || $receive_messages !== 'yes' || $old_status === $new_status) {
+            return null;
+        }
+
+        $message = "Nyeri Club: Dear {$name}, your visit on {$visit_date} ";
+        
+        switch ($new_status) {
+            case 'approved':
+                $message .= "has been approved. Please carry a valid ID when you arrive.";
+                break;
+                
+            case 'unapproved':
+                $message .= "is currently pending approval due to capacity limits. You will be notified once approved.";
+                break;
+                
+            case 'cancelled':
+                $message .= "has been cancelled. Please contact your host for more information.";
+                break;
+                
+            default:
+                return null;
+        }
+        
+        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+    }
+
+    /**
+     * NEW: Send host daily limit notification
+     */
+    public function send_host_limit_notification(array $host_data, string $visit_date, int $unapproved_count): ?array
+    {
+        $phone = $host_data['phone_number'] ?? '';
+        $name = $host_data['first_name'] ?? 'Host';
+        $receive_messages = get_user_meta($host_data['user_id'], 'receive_messages', true);
+        
+        if (empty($phone) || $receive_messages !== 'yes' || $unapproved_count <= 0) {
+            return null;
+        }
+
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $message = "Nyeri Club: Dear {$name}, you have exceeded your daily guest limit (4) for {$formatted_date}. ";
+        $message .= "{$unapproved_count} guest(s) are pending approval and will be notified once slots become available.";
+        
+        return $this->send_sms($phone, $message, $host_data['user_id']);
+    }
+
+    /**
+     * NEW: Send sign-in confirmation SMS
+     */
+    public function send_signin_notification(array $guest_data, array $visit_data): ?array
+    {
+        $phone = $guest_data['phone_number'] ?? '';
+        $name = $guest_data['first_name'] ?? '';
+        $receive_messages = $guest_data['receive_messages'] ?? 'no';
+        $signin_time = date('g:i A', strtotime($visit_data['sign_in_time']));
+        
+        if (empty($phone) || $receive_messages !== 'yes') {
+            return null;
+        }
+
+        $message = "Nyeri Club: Welcome {$name}! You have successfully signed in at {$signin_time}. Enjoy your visit!";
+        
+        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+    }
+
+    /**
+     * NEW: Send sign-out confirmation SMS
+     */
+    public function send_signout_notification(array $guest_data, array $visit_data): ?array
+    {
+        $phone = $guest_data['phone_number'] ?? '';
+        $name = $guest_data['first_name'] ?? '';
+        $receive_messages = $guest_data['receive_messages'] ?? 'no';
+        $signout_time = date('g:i A', strtotime($visit_data['sign_out_time']));
+        
+        if (empty($phone) || $receive_messages !== 'yes') {
+            return null;
+        }
+
+        $message = "Nyeri Club: Thank you for your visit {$name}! You have successfully signed out at {$signout_time}. Have a great day!";
+        
+        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+    }
+
+    /**
+     * Handle SMS delivery callback from SMS Leopard - UPDATED
+     */
+    public function handle_sms_delivery_callback(): void
+    {
+        // Log all incoming data for debugging
+        error_log('SMS Callback received: ' . json_encode($_POST));
+        
+        $status_secret = get_option('vms_status_secret', '');
+        
+        // Verify secret if configured
+        if (!empty($status_secret)) {
+            $received_secret = $_POST['status_secret'] ?? '';
+            if ($received_secret !== $status_secret) {
+                http_response_code(403);
+                echo 'Unauthorized';
+                exit;
+            }
+        }
+
+        $message_id = $_POST['id'] ?? '';
+        $status = $_POST['status'] ?? '';
+        $reason = $_POST['reason'] ?? '';
+        $time = $_POST['time'] ?? '';
+        
+        if (!empty($message_id) && !empty($status)) {
+            // Update SMS status in database
+            global $wpdb;
+            $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+            
+            $update_data = [
+                'status' => strtolower($status),
+                'updated_at' => current_time('mysql')
+            ];
+            
+            // Add additional data if available
+            if (!empty($reason)) {
+                $existing_data = $wpdb->get_var($wpdb->prepare(
+                    "SELECT response_data FROM {$table_name} WHERE message_id = %s",
+                    $message_id
+                ));
+                
+                $response_data = $existing_data ? json_decode($existing_data, true) : [];
+                $response_data['delivery_reason'] = $reason;
+                $response_data['delivery_time'] = $time;
+                
+                $update_data['response_data'] = json_encode($response_data);
+            }
+            
+            $updated = $wpdb->update(
+                $table_name,
+                $update_data,
+                ['message_id' => $message_id],
+                array_fill(0, count($update_data), '%s'),
+                ['%s']
+            );
+            
+            if ($updated) {
+                error_log("SMS status updated for message {$message_id}: {$status}");
+            }
+        }
+        
+        // Respond with 200 OK
+        http_response_code(200);
+        echo 'OK';
+    }
+
+    /**
+     * Get callback URL for SMS status updates
+     */
+    public function get_callback_url(): string
+    {
+        return home_url('/vms-sms-callback/');
+    }
+
+
+
+    /**
+     * Get recent SMS logs for dashboard - UPDATED to use new table
+     */
+    public function get_recent_sms_logs(int $limit = 10): array
+    {
+        global $wpdb;
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table_name} 
+            ORDER BY created_at DESC 
+            LIMIT %d",
+            $limit
+        ), ARRAY_A);
+    }
+
+    /**
+     * Get SMS statistics - UPDATED to use new table
+     */
+    public function get_sms_statistics(int $days = 30): array
+    {
+        global $wpdb;
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        $date_from = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+        
+        $stats = $wpdb->get_row($wpdb->prepare(
+            "SELECT 
+                COUNT(*) as total_sms,
+                SUM(CASE WHEN status IN ('sent', 'delivered') THEN 1 ELSE 0 END) as sent_sms,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_sms,
+                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_sms,
+                SUM(cost) as total_cost
+            FROM {$table_name} 
+            WHERE created_at >= %s",
+            $date_from
+        ), ARRAY_A);
+
+        return [
+            'total_sms' => (int) ($stats['total_sms'] ?? 0),
+            'sent_sms' => (int) ($stats['sent_sms'] ?? 0),
+            'failed_sms' => (int) ($stats['failed_sms'] ?? 0),
+            'delivered_sms' => (int) ($stats['delivered_sms'] ?? 0),
+            'total_cost' => (float) ($stats['total_cost'] ?? 0),
+            'success_rate' => $stats['total_sms'] > 0 ? 
+                round(($stats['sent_sms'] / $stats['total_sms']) * 100, 2) : 0,
+            'period_days' => $days
+        ];
+    }
+
+    /**
      * Clean and format phone number for Kenyan numbers
      */
     public function clean_phone_number(string $phone): string
@@ -196,7 +467,8 @@ class VMS_NotificationManager
         return $digits;
     }
 
-    /**
+
+   /**
      * Log SMS message to database
      */
     private function log_sms_message(
@@ -211,8 +483,10 @@ class VMS_NotificationManager
     ): bool {
         global $wpdb;
         
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
         return (bool) $wpdb->insert(
-            $wpdb->prefix . 'vms_sms_logs',
+            $table_name,
             [
                 'user_id' => $user_id,
                 'recipient_number' => $phone,
@@ -226,6 +500,7 @@ class VMS_NotificationManager
             ['%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s']
         );
     }
+
 
     /**
      * Get delivery report for a message
@@ -273,13 +548,43 @@ class VMS_NotificationManager
     {
         global $wpdb;
         
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
         return (bool) $wpdb->update(
-            $wpdb->prefix . 'vms_sms_logs',
-            ['status' => $status],
+            $table_name,
+            ['status' => $status, 'updated_at' => current_time('mysql')],
             ['message_id' => $message_id],
-            ['%s'],
+            ['%s', '%s'],
             ['%s']
         );
+    }
+
+    /**
+     * NEW: Check delivery status for pending SMS
+     */
+    public function check_pending_sms_delivery(): void
+    {
+        global $wpdb;
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        // Get messages sent in the last 24 hours that are still pending
+        $pending_messages = $wpdb->get_results(
+            "SELECT message_id FROM {$table_name} 
+            WHERE status IN ('sent', 'queued') 
+            AND message_id IS NOT NULL 
+            AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            LIMIT 50"
+        );
+        
+        foreach ($pending_messages as $message) {
+            $delivery_report = $this->get_delivery_report($message->message_id);
+            if ($delivery_report && isset($delivery_report['status'])) {
+                $this->update_sms_status($message->message_id, strtolower($delivery_report['status']));
+            }
+            
+            // Small delay to prevent API rate limiting
+            usleep(200000); // 0.2 seconds
+        }
     }
 
     /**
@@ -394,39 +699,6 @@ class VMS_NotificationManager
         }
     }
 
-    /**
-     * Get SMS statistics
-     */
-    public function get_sms_statistics(int $days = 30): array
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'vms_sms_logs';
-        
-        $date_from = date('Y-m-d H:i:s', strtotime("-{$days} days"));
-        
-        $stats = $wpdb->get_row($wpdb->prepare(
-            "SELECT 
-                COUNT(*) as total_sms,
-                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_sms,
-                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_sms,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_sms,
-                SUM(cost) as total_cost
-            FROM {$table_name} 
-            WHERE created_at >= %s",
-            $date_from
-        ), ARRAY_A);
-
-        return [
-            'total_sms' => (int) ($stats['total_sms'] ?? 0),
-            'sent_sms' => (int) ($stats['sent_sms'] ?? 0),
-            'failed_sms' => (int) ($stats['failed_sms'] ?? 0),
-            'delivered_sms' => (int) ($stats['delivered_sms'] ?? 0),
-            'total_cost' => (float) ($stats['total_cost'] ?? 0),
-            'success_rate' => $stats['total_sms'] > 0 ? 
-                round(($stats['sent_sms'] / $stats['total_sms']) * 100, 2) : 0,
-            'period_days' => $days
-        ];
-    }
 
     /**
      * Send test SMS
@@ -446,22 +718,6 @@ class VMS_NotificationManager
         
         // Check if it's a valid Kenyan number (254 + 9 digits)
         return preg_match('/^254[17]\d{8}$/', $clean_phone) === 1;
-    }
-
-    /**
-     * Get recent SMS logs for dashboard
-     */
-    public function get_recent_sms_logs(int $limit = 10): array
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'vms_sms_logs';
-        
-        return $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$table_name} 
-            ORDER BY created_at DESC 
-            LIMIT %d",
-            $limit
-        ), ARRAY_A);
     }
 
     /**
@@ -492,12 +748,12 @@ class VMS_NotificationManager
     }
 
     /**
-     * Clean up old SMS logs
+     * Cleanup old SMS logs - UPDATED to clean logs older than 90 days
      */
     public function cleanup_old_logs(int $days = 90): int
     {
         global $wpdb;
-        $table_name = $wpdb->prefix . 'vms_sms_logs';
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
         
         $date_threshold = date('Y-m-d H:i:s', strtotime("-{$days} days"));
         

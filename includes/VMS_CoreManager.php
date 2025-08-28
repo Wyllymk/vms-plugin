@@ -87,6 +87,35 @@ class VMS_CoreManager
         add_action('auto_sign_out_guests_at_midnight', [$this, 'auto_sign_out_guests']);
         add_action('reset_monthly_guest_limits', [$this, 'reset_monthly_limits']);
         add_action('reset_yearly_guest_limits', [$this, 'reset_yearly_limits']);
+
+        // NEW: Add cancellation handler
+        add_action('wp_ajax_cancel_visit', [$this, 'handle_visit_cancellation']);
+        add_action('wp_ajax_update_guest_status', [$this, 'handle_guest_status_update']);
+        add_action('wp_ajax_update_visit_status', [$this, 'handle_visit_status_update']);
+
+        add_action('admin_init', [$this, 'handle_status_setup']);
+    }
+
+    /**
+     * Setup automatic status URL in settings if not already configured
+     */
+    public function handle_status_setup(): void
+    {
+        
+        $status_url = get_option('vms_status_url', '');
+        $status_secret = get_option('vms_status_secret', '');
+        
+        // Auto-configure callback URL if not set
+        if (empty($status_url)) {
+            $callback_url = home_url('/vms-sms-callback/');
+            update_option('vms_status_url', $callback_url);
+        }
+        
+        // Generate status secret if not set
+        if (empty($status_secret)) {
+            $secret = wp_generate_password(32, false, false);
+            update_option('vms_status_secret', $secret);
+        }
     }
 
     /**
@@ -153,6 +182,11 @@ class VMS_CoreManager
         }
 
         $status = get_user_meta($user->ID, 'registration_status', true);
+
+        // ✅ If no status is set, allow login
+        if (empty($status)) {
+            return $user;
+        }
 
         switch ($status) {
             case 'active':
@@ -373,17 +407,376 @@ class VMS_CoreManager
         wp_send_json_error(['errors' => ['Failed to retrieve balance from API']]);
     }
 
+    /**
+     * NEW: Handle visit cancellation via AJAX
+     */
+    public function handle_visit_cancellation(): void
+    {
+        $this->verify_ajax_request();
+        
+        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
+        
+        if (!$visit_id) {
+            wp_send_json_error(['messages' => ['Invalid visit ID']]);
+            return;
+        }
+
+        global $wpdb;
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get visit and guest data
+        $visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails
+            FROM {$guest_visits_table} gv
+            LEFT JOIN {$guests_table} g ON g.id = gv.guest_id
+            WHERE gv.id = %d",
+            $visit_id
+        ));
+
+        if (!$visit) {
+            wp_send_json_error(['messages' => ['Visit not found']]);
+            return;
+        }
+
+        // Store old status for notification
+        $old_status = $visit->status;
+
+        // Update visit status to cancelled
+        $updated = $wpdb->update(
+            $guest_visits_table,
+            ['status' => 'cancelled'],
+            ['id' => $visit_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($updated === false) {
+            wp_send_json_error(['messages' => ['Failed to cancel visit']]);
+            return;
+        }
+
+        // Recalculate guest visit statuses
+        self::recalculate_guest_visit_statuses($visit->guest_id);
+
+        // Recalculate host daily limits
+        if ($visit->host_member_id) {
+            self::recalculate_host_daily_limits($visit->host_member_id, $visit->visit_date);
+        }
+
+        // Send cancellation notifications
+        $guest_data = [
+            'first_name' => $visit->first_name,
+            'phone_number' => $visit->phone_number,
+            'email' => $visit->email,
+            'receive_messages' => $visit->receive_messages,
+            'receive_emails' => $visit->receive_emails,
+            'user_id' => $visit->guest_id
+        ];
+
+        $visit_data = [
+            'visit_date' => $visit->visit_date,
+            'host_member_id' => $visit->host_member_id
+        ];
+
+        // Send SMS notification
+        VMS_NotificationManager::get_instance()->send_visit_status_notification(
+            $guest_data, $visit_data, $old_status, 'cancelled'
+        );
+
+        // Send email notification
+        $this->send_visit_cancellation_email($guest_data, $visit_data);
+
+        wp_send_json_success(['messages' => ['Visit cancelled successfully']]);
+    }
 
     /**
-     * Recalculate visit statuses for a specific guest
+     * NEW: Handle guest status update
+     */
+    public function handle_guest_status_update(): void
+    {
+        $this->verify_ajax_request();
+        
+        $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
+        $new_status = sanitize_text_field($_POST['guest_status'] ?? '');
+        
+        if (!$guest_id || !in_array($new_status, ['active', 'suspended', 'banned'])) {
+            wp_send_json_error(['messages' => ['Invalid parameters']]);
+            return;
+        }
+
+        global $wpdb;
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get current guest data
+        $guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$guests_table} WHERE id = %d",
+            $guest_id
+        ));
+
+        if (!$guest) {
+            wp_send_json_error(['messages' => ['Guest not found']]);
+            return;
+        }
+
+        $old_status = $guest->guest_status;
+
+        // Update guest status
+        $updated = $wpdb->update(
+            $guests_table,
+            ['guest_status' => $new_status, 'updated_at' => current_time('mysql')],
+            ['id' => $guest_id],
+            ['%s', '%s'],
+            ['%d']
+        );
+
+        if ($updated === false) {
+            wp_send_json_error(['messages' => ['Failed to update guest status']]);
+            return;
+        }
+
+        // Recalculate all visit statuses for this guest
+        self::recalculate_guest_visit_statuses($guest_id);
+
+        // Send status change notifications
+        $guest_data = [
+            'first_name' => $guest->first_name,
+            'phone_number' => $guest->phone_number,
+            'email' => $guest->email,
+            'receive_messages' => $guest->receive_messages,
+            'receive_emails' => $guest->receive_emails,
+            'user_id' => $guest_id
+        ];
+
+        // Send notifications
+        VMS_NotificationManager::get_instance()->send_guest_status_notification(
+            $guest_data, $old_status, $new_status
+        );
+
+        $this->send_guest_status_change_email($guest_data, $old_status, $new_status);
+
+        wp_send_json_success(['messages' => ['Guest status updated successfully']]);
+    }
+
+    /**
+     * Handle guest sign in via AJAX - UPDATED with notifications
+     */
+    public function handle_sign_in_guest(): void
+    {
+        $this->verify_ajax_request();
+
+        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
+
+        if (!$visit_id) {
+            wp_send_json_error(['messages' => ['Invalid visit ID']]);
+            return;
+        }
+
+        global $wpdb;
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get visit and guest data
+        $visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails, g.guest_status
+            FROM {$guest_visits_table} gv
+            LEFT JOIN {$guests_table} g ON g.id = gv.guest_id
+            WHERE gv.id = %d",
+            $visit_id
+        ));
+
+        if (!$visit) {
+            wp_send_json_error(['messages' => ['Visit not found']]);
+            return;
+        }
+
+        if (!empty($visit->sign_in_time)) {
+            wp_send_json_error(['messages' => ['Guest already signed in']]);
+            return;
+        }
+
+        // Check guest status
+        if (in_array($visit->guest_status, ['banned', 'suspended'])) {
+            wp_send_json_error(['messages' => ['Guest access is restricted due to status: ' . $visit->guest_status]]);
+            return;
+        }
+
+        // Check visit date
+        $current_date = current_time('Y-m-d');
+        $visit_date = date('Y-m-d', strtotime($visit->visit_date));
+        
+        if ($visit_date !== $current_date) {
+            wp_send_json_error(['messages' => ['Guest can only sign in on their scheduled visit date']]);
+            return;
+        }
+
+        $signin_time = current_time('mysql');
+
+        // Update sign-in time
+        $updated = $wpdb->update(
+            $guest_visits_table,
+            ['sign_in_time' => $signin_time],
+            ['id' => $visit_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($updated === false) {
+            wp_send_json_error(['messages' => ['Failed to sign in guest']]);
+            return;
+        }
+
+        // Send sign-in notifications
+        $guest_data = [
+            'first_name' => $visit->first_name,
+            'phone_number' => $visit->phone_number,
+            'email' => $visit->email,
+            'receive_messages' => $visit->receive_messages,
+            'receive_emails' => $visit->receive_emails,
+            'user_id' => $visit->guest_id
+        ];
+
+        $visit_data = [
+            'sign_in_time' => $signin_time,
+            'visit_date' => $visit->visit_date
+        ];
+
+        // Send SMS and email notifications
+        VMS_NotificationManager::get_instance()->send_signin_notification($guest_data, $visit_data);
+        $this->send_signin_email_notification($guest_data, $visit_data);
+
+        // Fetch host member name
+        $host_member = get_user_by('id', $visit->host_member_id);
+        $host_name = $host_member ? $host_member->display_name : 'N/A';
+
+        // Prepare response data
+        $guest_data_response = [
+            'id' => $visit->guest_id,
+            'first_name' => $visit->first_name,
+            'last_name' => $visit->last_name,
+            'sign_in_time' => $signin_time,
+            'visit_id' => $visit_id
+        ];
+
+        wp_send_json_success([
+            'messages' => ['Guest signed in successfully'],
+            'guestData' => $guest_data_response
+        ]);
+    }
+
+    /**
+     * Handle guest sign out via AJAX - UPDATED with notifications
+     */
+    public function handle_sign_out_guest(): void
+    {
+        $this->verify_ajax_request();
+
+        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
+
+        if (!$visit_id) {
+            wp_send_json_error(['messages' => ['Invalid visit ID']]);
+            return;
+        }
+
+        global $wpdb;
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Get visit and guest data
+        $visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails
+            FROM {$guest_visits_table} gv
+            LEFT JOIN {$guests_table} g ON g.id = gv.guest_id
+            WHERE gv.id = %d",
+            $visit_id
+        ));
+
+        if (!$visit) {
+            wp_send_json_error(['messages' => ['Visit not found']]);
+            return;
+        }
+
+        if (empty($visit->sign_in_time)) {
+            wp_send_json_error(['messages' => ['Guest must be signed in first']]);
+            return;
+        }
+
+        if (!empty($visit->sign_out_time)) {
+            wp_send_json_error(['messages' => ['Guest already signed out']]);
+            return;
+        }
+
+        $signout_time = current_time('mysql');
+
+        // Update sign-out time
+        $updated = $wpdb->update(
+            $guest_visits_table,
+            ['sign_out_time' => $signout_time],
+            ['id' => $visit_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($updated === false) {
+            wp_send_json_error(['messages' => ['Failed to sign out guest']]);
+            return;
+        }
+
+        // Send sign-out notifications
+        $guest_data = [
+            'first_name' => $visit->first_name,
+            'phone_number' => $visit->phone_number,
+            'email' => $visit->email,
+            'receive_messages' => $visit->receive_messages,
+            'receive_emails' => $visit->receive_emails,
+            'user_id' => $visit->guest_id
+        ];
+
+        $visit_data = [
+            'sign_out_time' => $signout_time,
+            'sign_in_time' => $visit->sign_in_time
+        ];
+
+        // Send SMS and email notifications
+        VMS_NotificationManager::get_instance()->send_signout_notification($guest_data, $visit_data);
+        $this->send_signout_email_notification($guest_data, $visit_data);
+
+        // Prepare response data
+        $guest_data_response = [
+            'id' => $visit->guest_id,
+            'first_name' => $visit->first_name,
+            'last_name' => $visit->last_name,
+            'sign_out_time' => $signout_time,
+            'visit_id' => $visit_id
+        ];
+
+        wp_send_json_success([
+            'messages' => ['Guest signed out successfully'],
+            'guestData' => $guest_data_response
+        ]);
+    }
+
+    /**
+     * Recalculate visit statuses for a specific guest - UPDATED with notifications
      */
     public static function recalculate_guest_visit_statuses(int $guest_id): void
     {
         global $wpdb;
         
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $monthly_limit = 4;
         $yearly_limit = 12;
+        
+        // Get guest data for notifications
+        $guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$guests_table} WHERE id = %d",
+            $guest_id
+        ));
+
+        if (!$guest) return;
+
+        $old_guest_status = $guest->guest_status;
         
         // Fetch all non-cancelled visits for this guest, ordered by visit_date ASC
         $visits = $wpdb->get_results($wpdb->prepare(
@@ -398,6 +791,7 @@ class VMS_CoreManager
         
         $monthly_scheduled = [];
         $yearly_scheduled = [];
+        $status_changes = [];
         
         foreach ($visits as $visit) {
             $month_key = date('Y-m', strtotime($visit->visit_date));
@@ -429,6 +823,7 @@ class VMS_CoreManager
             }
             
             // Determine status for this visit
+            $old_status = $visit->status;
             $new_status = 'approved';
             
             // Check monthly/yearly limits
@@ -456,25 +851,100 @@ class VMS_CoreManager
                     ['%s'],
                     ['%d']
                 );
+                
+                // Track status changes for notifications
+                $status_changes[] = [
+                    'visit_id' => $visit->id,
+                    'visit_date' => $visit->visit_date,
+                    'old_status' => $old_status,
+                    'new_status' => $new_status,
+                    'host_member_id' => $visit->host_member_id
+                ];
             }
+        }
+
+        // Check if guest should be automatically suspended due to limits
+        $current_month = date('Y-m');
+        $current_year = date('Y');
+        $new_guest_status = $guest->guest_status;
+
+        if ($guest->guest_status === 'active') {
+            $current_monthly = $monthly_scheduled[$current_month] ?? 0;
+            $current_yearly = $yearly_scheduled[$current_year] ?? 0;
+
+            if ($current_monthly >= $monthly_limit || $current_yearly >= $yearly_limit) {
+                $new_guest_status = 'suspended';
+            }
+        }
+
+        // Update guest status if changed
+        if ($new_guest_status !== $old_guest_status) {
+            $wpdb->update(
+                $guests_table,
+                ['guest_status' => $new_guest_status, 'updated_at' => current_time('mysql')],
+                ['id' => $guest_id],
+                ['%s', '%s'],
+                ['%d']
+            );
+
+            // Send guest status change notification
+            $guest_data = [
+                'first_name' => $guest->first_name,
+                'phone_number' => $guest->phone_number,
+                'email' => $guest->email,
+                'receive_messages' => $guest->receive_messages,
+                'receive_emails' => $guest->receive_emails,
+                'user_id' => $guest_id
+            ];
+
+            VMS_NotificationManager::get_instance()->send_guest_status_notification(
+                $guest_data, $old_guest_status, $new_guest_status
+            );
+        }
+
+        // Send visit status change notifications
+        foreach ($status_changes as $change) {
+            $guest_data = [
+                'first_name' => $guest->first_name,
+                'phone_number' => $guest->phone_number,
+                'email' => $guest->email,
+                'receive_messages' => $guest->receive_messages,
+                'receive_emails' => $guest->receive_emails,
+                'user_id' => $guest_id
+            ];
+
+            $visit_data = [
+                'visit_date' => $change['visit_date'],
+                'host_member_id' => $change['host_member_id']
+            ];
+
+            VMS_NotificationManager::get_instance()->send_visit_status_notification(
+                $guest_data, $visit_data, $change['old_status'], $change['new_status']
+            );
         }
     }
 
     /**
-     * Recalculate host daily limits for a specific date
+     * Recalculate host daily limits - UPDATED with notifications
      */
     public static function recalculate_host_daily_limits(int $host_member_id, string $visit_date): void
     {
         global $wpdb;
         
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         
+        // Get host data for notifications
+        $host_user = get_userdata($host_member_id);
+        if (!$host_user) return;
+
         // Get all visits for this host on this date (excluding cancelled)
         $host_visits = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, guest_id, status 
-            FROM $guest_visits_table 
-            WHERE host_member_id = %d AND visit_date = %s AND status != 'cancelled' 
-            ORDER BY created_at ASC",
+            "SELECT gv.id, gv.guest_id, gv.status, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails
+            FROM $guest_visits_table gv
+            LEFT JOIN $guests_table g ON g.id = gv.guest_id
+            WHERE gv.host_member_id = %d AND gv.visit_date = %s AND gv.status != 'cancelled' 
+            ORDER BY gv.created_at ASC",
             $host_member_id,
             $visit_date
         ));
@@ -482,11 +952,19 @@ class VMS_CoreManager
         if (!$host_visits) return;
         
         $count = 0;
+        $unapproved_count = 0;
+        $status_changes = [];
+        
         foreach ($host_visits as $visit) {
             $count++;
+            $old_status = $visit->status;
             
             // First 4 visits should be approved (if not restricted by other limits)
             $new_status = $count <= 4 ? 'approved' : 'unapproved';
+            
+            if ($new_status === 'unapproved') {
+                $unapproved_count++;
+            }
             
             // Only update if status changed and it's not restricted by guest limits
             if ($visit->status !== $new_status) {
@@ -503,8 +981,178 @@ class VMS_CoreManager
                     ['%s'],
                     ['%d']
                 );
+
+                // Track status changes for notifications
+                if ($old_status !== $new_status) {
+                    $status_changes[] = [
+                        'guest_data' => [
+                            'first_name' => $visit->first_name,
+                            'phone_number' => $visit->phone_number,
+                            'email' => $visit->email,
+                            'receive_messages' => $visit->receive_messages,
+                            'receive_emails' => $visit->receive_emails,
+                            'user_id' => $visit->guest_id
+                        ],
+                        'visit_data' => [
+                            'visit_date' => $visit_date,
+                            'host_member_id' => $host_member_id
+                        ],
+                        'old_status' => $old_status,
+                        'new_status' => $new_status
+                    ];
+                }
             }
         }
+
+        // Send host limit notification if there are unapproved guests
+        if ($unapproved_count > 0) {
+            $host_data = [
+                'user_id' => $host_member_id,
+                'first_name' => get_user_meta($host_member_id, 'first_name', true) ?: $host_user->display_name,
+                'phone_number' => get_user_meta($host_member_id, 'phone_number', true)
+            ];
+
+            VMS_NotificationManager::get_instance()->send_host_limit_notification(
+                $host_data, $visit_date, $unapproved_count
+            );
+        }
+
+        // Send visit status change notifications
+        foreach ($status_changes as $change) {
+            VMS_NotificationManager::get_instance()->send_visit_status_notification(
+                $change['guest_data'], $change['visit_data'], $change['old_status'], $change['new_status']
+            );
+        }
+    }
+
+    /**
+     * NEW: Send visit cancellation email notification
+     */
+    private function send_visit_cancellation_email(array $guest_data, array $visit_data): void
+    {
+        if ($guest_data['receive_emails'] !== 'yes') {
+            return;
+        }
+
+        $formatted_date = date('F j, Y', strtotime($visit_data['visit_date']));
+        
+        $subject = 'Visit Cancellation - Nyeri Club';
+        $message = "Dear {$guest_data['first_name']},\n\n";
+        $message .= "Your visit to Nyeri Club scheduled for {$formatted_date} has been cancelled.\n\n";
+        
+        if ($visit_data['host_member_id']) {
+            $host = get_userdata($visit_data['host_member_id']);
+            if ($host) {
+                $host_name = get_user_meta($visit_data['host_member_id'], 'first_name', true) . ' ' . 
+                           get_user_meta($visit_data['host_member_id'], 'last_name', true);
+                $message .= "Host: " . trim($host_name) . "\n\n";
+            }
+        }
+        
+        $message .= "If you have any questions, please contact your host or reception.\n\n";
+        $message .= "Best regards,\n";
+        $message .= "Nyeri Club Visitor Management System";
+
+        wp_mail($guest_data['email'], $subject, $message);
+    }
+
+    /**
+     * NEW: Send guest status change email notification
+     */
+    private function send_guest_status_change_email(array $guest_data, string $old_status, string $new_status): void
+    {
+        if ($guest_data['receive_emails'] !== 'yes') {
+            return;
+        }
+
+        $subject = 'Account Status Update - Nyeri Club';
+        $message = "Dear {$guest_data['first_name']},\n\n";
+        
+        switch ($new_status) {
+            case 'suspended':
+                $message .= "Your guest privileges have been temporarily suspended";
+                if ($old_status === 'active') {
+                    $message .= " due to visit limit exceeded";
+                }
+                $message .= ".\n\nPlease contact reception for assistance.\n\n";
+                break;
+                
+            case 'banned':
+                $message .= "Your guest privileges have been permanently revoked.\n\n";
+                $message .= "Please contact management for clarification.\n\n";
+                break;
+                
+            case 'active':
+                if (in_array($old_status, ['suspended', 'banned'])) {
+                    $message .= "Your guest privileges have been restored.\n\n";
+                    $message .= "You can now make new visit requests.\n\n";
+                } else {
+                    return; // No need to send email for normal active status
+                }
+                break;
+                
+            default:
+                return;
+        }
+        
+        $message .= "Best regards,\n";
+        $message .= "Nyeri Club Visitor Management System";
+
+        wp_mail($guest_data['email'], $subject, $message);
+    }
+
+    /**
+     * NEW: Send sign-in email notification
+     */
+    private function send_signin_email_notification(array $guest_data, array $visit_data): void
+    {
+        if ($guest_data['receive_emails'] !== 'yes') {
+            return;
+        }
+
+        $signin_time = date('g:i A', strtotime($visit_data['sign_in_time']));
+        $visit_date = date('F j, Y', strtotime($visit_data['visit_date']));
+        
+        $subject = 'Welcome to Nyeri Club - Check-in Confirmation';
+        $message = "Dear {$guest_data['first_name']},\n\n";
+        $message .= "Welcome to Nyeri Club!\n\n";
+        $message .= "You have successfully checked in at {$signin_time} on {$visit_date}.\n\n";
+        $message .= "Enjoy your visit!\n\n";
+        $message .= "Best regards,\n";
+        $message .= "Nyeri Club Visitor Management System";
+
+        wp_mail($guest_data['email'], $subject, $message);
+    }
+
+    /**
+     * NEW: Send sign-out email notification
+     */
+    private function send_signout_email_notification(array $guest_data, array $visit_data): void
+    {
+        if ($guest_data['receive_emails'] !== 'yes') {
+            return;
+        }
+
+        $signout_time = date('g:i A', strtotime($visit_data['sign_out_time']));
+        $signin_time = date('g:i A', strtotime($visit_data['sign_in_time']));
+        
+        // Calculate duration
+        $start = new \DateTime($visit_data['sign_in_time']);
+        $end = new \DateTime($visit_data['sign_out_time']);
+        $duration = $start->diff($end)->format('%h hours %i minutes');
+        
+        $subject = 'Thank You for Visiting - Nyeri Club';
+        $message = "Dear {$guest_data['first_name']},\n\n";
+        $message .= "Thank you for visiting Nyeri Club!\n\n";
+        $message .= "Visit Summary:\n";
+        $message .= "Check-in: {$signin_time}\n";
+        $message .= "Check-out: {$signout_time}\n";
+        $message .= "Duration: {$duration}\n\n";
+        $message .= "We hope you enjoyed your visit. We look forward to welcoming you back soon!\n\n";
+        $message .= "Best regards,\n";
+        $message .= "Nyeri Club Visitor Management System";
+
+        wp_mail($guest_data['email'], $subject, $message);
     }
 
     /**
@@ -2000,216 +2648,6 @@ class VMS_CoreManager
             default:
                 return 'Unknown';
         }
-    }
-
-    /**
-     * Handle guest sign in via AJAX
-     */
-    public function handle_sign_in_guest(): void
-    {
-        $this->verify_ajax_request();
-
-        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
-
-        if (!$visit_id) {
-            wp_send_json_error(['messages' => ['Invalid visit ID']]);
-            return;
-        }
-
-        global $wpdb;
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        $visit = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, guest_id, host_member_id, visit_date, sign_in_time FROM $guest_visits_table WHERE id = %d",
-            $visit_id
-        ));
-
-        if (!$visit) {
-            wp_send_json_error(['messages' => ['Visit not found']]);
-            return;
-        }
-
-        if (!empty($visit->sign_in_time)) {
-            wp_send_json_error(['messages' => ['Guest already signed in']]);
-            return;
-        }
-
-        // Fetch guest data
-        $guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $guests_table WHERE id = %d",
-            $visit->guest_id
-        ));
-
-        if (!$guest) {
-            wp_send_json_error(['messages' => ['Guest not found']]);
-            return;
-        }
-
-        // Re-evaluate guest status
-        $guest_status = $this->calculate_guest_status($visit->guest_id, $visit->host_member_id, $visit->visit_date);
-        
-        // Update the guest status in the database
-        $wpdb->update(
-            $guests_table,
-            ['status' => $guest_status],
-            ['id' => $visit->guest_id],
-            ['%s'],
-            ['%d']
-        );
-
-        // Check if guest can sign in (banned or suspended guests cannot sign in)
-        if ($guest_status === 'banned' || $guest_status === 'suspended') {
-            wp_send_json_error(['messages' => ['Guest access is restricted due to status: ' . $guest_status]]);
-            return;
-        }
-
-        // Check if visit date is today (guests can only sign in on their visit date)
-        $current_date = current_time('Y-m-d');
-        $visit_date = date('Y-m-d', strtotime($visit->visit_date));
-        
-        if ($visit_date !== $current_date) {
-            wp_send_json_error(['messages' => ['Guest can only sign in on their scheduled visit date']]);
-            return;
-        }
-
-        // Update sign-in time
-        $updated = $wpdb->update(
-            $guest_visits_table,
-            ['sign_in_time' => current_time('mysql')],
-            ['id' => $visit_id],
-            ['%s'],
-            ['%d']
-        );
-
-        if ($updated === false) {
-            wp_send_json_error(['messages' => ['Failed to sign in guest']]);
-            return;
-        }
-
-        // Fetch host member name
-        $host_member = get_user_by('id', $visit->host_member_id);
-        $host_name = $host_member ? $host_member->display_name : 'N/A';
-
-        // Prepare guest data for response
-        $guest_data = [
-            'id'              => $visit->guest_id,
-            'first_name'      => $guest->first_name,
-            'last_name'       => $guest->last_name,
-            'email'           => $guest->email,
-            'phone_number'    => $guest->phone_number,
-            'id_number'       => $guest->id_number,
-            'host_member_id'  => $visit->host_member_id,
-            'host_name'       => $host_name,
-            'visit_date'      => $visit->visit_date,
-            'courtesy'        => $guest->courtesy,
-            'receive_emails'  => $guest->receive_emails,
-            'receive_messages' => $guest->receive_messages,
-            'status'          => $guest_status,
-            'guest_status'    => $guest->guest_status,
-            'sign_in_time'    => current_time('mysql'),
-            'sign_out_time'   => null,
-            'visit_id'        => $visit_id
-        ];
-
-        wp_send_json_success([
-            'messages' => ['Guest signed in successfully'],
-            'guestData' => $guest_data
-        ]);
-    }
-
-    /**
-     * Handle guest sign out via AJAX
-     */
-    public function handle_sign_out_guest(): void
-    {
-        $this->verify_ajax_request();
-
-        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
-
-        if (!$visit_id) {
-            wp_send_json_error(['messages' => ['Invalid visit ID']]);
-            return;
-        }
-
-        global $wpdb;
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        $visit = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, guest_id, host_member_id, visit_date, sign_in_time, sign_out_time FROM $guest_visits_table WHERE id = %d",
-            $visit_id
-        ));
-
-        if (!$visit) {
-            wp_send_json_error(['messages' => ['Visit not found']]);
-            return;
-        }
-
-        if (empty($visit->sign_in_time)) {
-            wp_send_json_error(['messages' => ['Guest must be signed in first']]);
-            return;
-        }
-
-        if (!empty($visit->sign_out_time)) {
-            wp_send_json_error(['messages' => ['Guest already signed out']]);
-            return;
-        }
-
-        // Fetch guest data
-        $guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $guests_table WHERE id = %d",
-            $visit->guest_id
-        ));
-
-        if (!$guest) {
-            wp_send_json_error(['messages' => ['Guest not found']]);
-            return;
-        }
-
-        // Update sign-out time
-        $updated = $wpdb->update(
-            $guest_visits_table,
-            ['sign_out_time' => current_time('mysql')],
-            ['id' => $visit_id],
-            ['%s'],
-            ['%d']
-        );
-
-        if ($updated === false) {
-            wp_send_json_error(['messages' => ['Failed to sign out guest']]);
-            return;
-        }
-
-        // Fetch host member name
-        $host_member = get_user_by('id', $visit->host_member_id);
-        $host_name = $host_member ? $host_member->display_name : 'N/A';
-
-        // Prepare guest data for response
-        $guest_data = [
-            'id'              => $visit->guest_id,
-            'first_name'      => $guest->first_name,
-            'last_name'       => $guest->last_name,
-            'email'           => $guest->email,
-            'phone_number'    => $guest->phone_number,
-            'id_number'       => $guest->id_number,
-            'host_member_id'  => $visit->host_member_id,
-            'host_name'       => $host_name,
-            'visit_date'      => $visit->visit_date,
-            'courtesy'        => $guest->courtesy,
-            'receive_emails'  => $guest->receive_emails,
-            'receive_messages' => $guest->receive_messages,
-            'status'          => $guest->status,
-            'guest_status'    => $guest->guest_status,
-            'sign_in_time'    => $visit->sign_in_time,
-            'sign_out_time'   => current_time('mysql'),
-            'visit_id'        => $visit_id
-        ];
-
-        wp_send_json_success([
-            'messages' => ['Guest signed out successfully'],
-            'guestData' => $guest_data
-        ]);
     }
 
     /**

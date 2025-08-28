@@ -19,6 +19,13 @@ class VMS_Activation
         self::create_essential_pages();
         self::create_database_tables();
         self::activate_cron_jobs();
+
+        add_rewrite_rule(
+            '^vms-sms-callback/?$',
+            'index.php?vms_sms_callback=1',
+            'top'
+        );
+
         flush_rewrite_rules();
     }
 
@@ -226,21 +233,21 @@ class VMS_Activation
     }
 
     /**
-     * Create SMS logs table
-     */
+    * Create SMS logs table
+    */
     private static function create_sms_logs_table(): void
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
-        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS);
-
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
         $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT(20) UNSIGNED DEFAULT NULL,
             recipient_number VARCHAR(20) NOT NULL,
             message TEXT NOT NULL,
             message_id VARCHAR(255) DEFAULT NULL,
-            status ENUM('sent','failed','queued','delivered','expired') NOT NULL DEFAULT 'queued',
+            status ENUM('sent','failed','queued','delivered','expired','undelivered') NOT NULL DEFAULT 'queued',
             cost DECIMAL(10,2) DEFAULT NULL,
             response_data TEXT DEFAULT NULL,
             error_message TEXT DEFAULT NULL,
@@ -253,11 +260,14 @@ class VMS_Activation
             KEY status (status),
             KEY created_at (created_at)
         ) ENGINE=InnoDB $charset_collate;";
-
+        
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
-
+    
+    /**
+     * Add SMS logs cleanup cron job
+     */
     private static function activate_cron_jobs(): void
     {
         // Local midnight according to WP settings
@@ -265,6 +275,16 @@ class VMS_Activation
 
         // Convert to UTC for cron storage
         $midnight_utc = $midnight_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
+
+        // Add SMS cleanup job - runs daily at 2 AM
+        if (!wp_next_scheduled('cleanup_old_sms_logs')) {
+            wp_schedule_event(strtotime('tomorrow 2:00 AM'), 'daily', 'cleanup_old_sms_logs');
+        }
+        
+        // SMS delivery status check - runs every 30 minutes
+        if (!wp_next_scheduled('check_sms_delivery_status')) {
+            wp_schedule_event(time(), 'hourly', 'check_sms_delivery_status');
+        }
 
         if (!wp_next_scheduled('sms_balance_cron')) {
             wp_schedule_event(time(), 'hourly', 'sms_balance_cron');

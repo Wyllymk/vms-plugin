@@ -324,6 +324,91 @@ class VMS_Admin
 </div>
 <?php
     }
+    /**
+     * Get formatted SMS logs for admin dashboard
+     */
+    function vms_get_sms_logs_formatted(int $limit = 50): array
+    {
+        global $wpdb;
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        $logs = $wpdb->get_results($wpdb->prepare(
+            "SELECT 
+                id,
+                user_id,
+                recipient_number,
+                LEFT(message, 100) as message_preview,
+                status,
+                cost,
+                error_message,
+                created_at,
+                updated_at
+            FROM {$table_name} 
+            ORDER BY created_at DESC 
+            LIMIT %d",
+            $limit
+        ), ARRAY_A);
+        
+        // Format the data for display
+        foreach ($logs as &$log) {
+            $log['formatted_date'] = date('M j, Y g:i A', strtotime($log['created_at']));
+            $log['status_class'] = vms_get_sms_status_class($log['status']);
+            $log['cost_formatted'] = 'KES ' . number_format($log['cost'], 2);
+            
+            // Get user name if user_id exists
+            if ($log['user_id']) {
+                $user = get_userdata($log['user_id']);
+                $log['user_name'] = $user ? $user->display_name : 'Unknown User';
+            } else {
+                $log['user_name'] = 'System';
+            }
+        }
+        
+        return $logs;
+    }
+
+    /**
+     * Get CSS class for SMS status
+     */
+    function vms_get_sms_status_class(string $status): string
+    {
+        switch (strtolower($status)) {
+            case 'delivered':
+                return 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500';
+            case 'sent':
+            case 'queued':
+                return 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-orange-400';
+            case 'failed':
+            case 'expired':
+            case 'undelivered':
+                return 'bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-500';
+            default:
+                return 'bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-white';
+        }
+    }
+
+    /**
+     * Get human-readable SMS status text
+     */
+    function vms_get_sms_status_text(string $status): string
+    {
+        switch (strtolower($status)) {
+            case 'delivered':
+                return 'Delivered';
+            case 'sent':
+                return 'Sent';
+            case 'queued':
+                return 'Queued';
+            case 'failed':
+                return 'Failed';
+            case 'expired':
+                return 'Expired';
+            case 'undelivered':
+                return 'Undelivered';
+            default:
+                return ucfirst($status);
+        }
+    }
 
     /**
      * Render SMS logs page

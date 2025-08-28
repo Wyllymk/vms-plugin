@@ -18,7 +18,7 @@ class VMS_Config
     public const GUEST_VISITS_TABLE = 'vms_guest_visits';
     public const RECIP_MEMBERS_TABLE = 'vms_reciprocating_members';
     public const RECIP_CLUBS_TABLE = 'vms_reciprocating_clubs';
-    public const SMS_LOGS = 'vms_sms_logs';
+    public const SMS_LOGS_TABLE = 'vms_sms_logs';
 
 
     /**
