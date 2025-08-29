@@ -335,7 +335,7 @@ class VMS_Activation
             VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE),
             VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),
             VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
-            VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE),
             VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE)
         ];
         foreach ($tables as $table) {
