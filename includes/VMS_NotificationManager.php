@@ -156,7 +156,7 @@ class VMS_NotificationManager
             $phone = $recipient['phone'] ?? $recipient;
             $user_id = $recipient['user_id'] ?? null;
             
-            $result = self::send_sms($phone, $message, $user_id);
+            $result = self::send_sms($phone, $message, $user_id, $role);
             $results[] = [
                 'phone' => $phone,
                 'result' => $result
@@ -177,6 +177,7 @@ class VMS_NotificationManager
         $phone = $guest_data['phone_number'] ?? '';
         $name = $guest_data['first_name'] ?? '';
         $receive_messages = $guest_data['receive_messages'] ?? 'no';
+        $role = 'guest';
         
         if (empty($phone) || $receive_messages !== 'yes') {
             return null;
@@ -209,7 +210,7 @@ class VMS_NotificationManager
                 return null;
         }
         
-        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -221,6 +222,7 @@ class VMS_NotificationManager
         $name = $guest_data['first_name'] ?? '';
         $receive_messages = $guest_data['receive_messages'] ?? 'no';
         $visit_date = date('F j, Y', strtotime($visit_data['visit_date']));
+        $role = 'guest';
         
         if (empty($phone) || $receive_messages !== 'yes' || $old_status === $new_status) {
             return null;
@@ -245,7 +247,7 @@ class VMS_NotificationManager
                 return null;
         }
         
-        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -256,6 +258,8 @@ class VMS_NotificationManager
         $phone = $host_data['phone_number'] ?? '';
         $name = $host_data['first_name'] ?? 'Host';
         $receive_messages = get_user_meta($host_data['user_id'], 'receive_messages', true);
+        $user_data = get_userdata($host_data['user_id']);
+        $role = $user_data->roles[0] ?? ''; // Gets the first role in the array 
         
         if (empty($phone) || $receive_messages !== 'yes' || $unapproved_count <= 0) {
             return null;
@@ -265,7 +269,7 @@ class VMS_NotificationManager
         $message = "Nyeri Club: Dear {$name}, you have exceeded your daily guest limit (4) for {$formatted_date}. ";
         $message .= "{$unapproved_count} guest(s) are pending approval and will be notified once slots become available.";
         
-        return self::send_sms($phone, $message, $host_data['user_id']);
+        return self::send_sms($phone, $message, $host_data['user_id'], $role);
     }
 
     /**
@@ -277,6 +281,7 @@ class VMS_NotificationManager
         $name = $guest_data['first_name'] ?? '';
         $receive_messages = $guest_data['receive_messages'] ?? 'no';
         $signin_time = date('g:i A', strtotime($visit_data['sign_in_time']));
+        $role = 'guest';
         
         if (empty($phone) || $receive_messages !== 'yes') {
             return null;
@@ -284,7 +289,7 @@ class VMS_NotificationManager
 
         $message = "Nyeri Club: Welcome {$name}! You have successfully signed in at {$signin_time}. Enjoy your visit!";
         
-        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -296,6 +301,7 @@ class VMS_NotificationManager
         $name = $guest_data['first_name'] ?? '';
         $receive_messages = $guest_data['receive_messages'] ?? 'no';
         $signout_time = date('g:i A', strtotime($visit_data['sign_out_time']));
+        $role = 'guest';
         
         if (empty($phone) || $receive_messages !== 'yes') {
             return null;
@@ -303,7 +309,7 @@ class VMS_NotificationManager
 
         $message = "Nyeri Club: Thank you for your visit {$name}! You have successfully signed out at {$signout_time}. Have a great day!";
         
-        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -775,6 +781,7 @@ class VMS_NotificationManager
         $host = $visitor_data['host_name'] ?? '';
         $date = $visitor_data['visit_date'] ?? date('Y-m-d');
         $time = $visitor_data['visit_time'] ?? date('H:i');
+        $role = 'guest';
         
         if (empty($phone)) {
             return null;
@@ -782,7 +789,7 @@ class VMS_NotificationManager
 
         $message = "Hi {$name}, your visit to see {$host} on {$date} at {$time} has been scheduled. Please arrive on time. Thank you.";
         
-        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -794,6 +801,7 @@ class VMS_NotificationManager
         $visitor_name = $visitor_data['name'] ?? '';
         $visitor_phone = $visitor_data['phone'] ?? '';
         $purpose = $visitor_data['purpose'] ?? 'Meeting';
+        $role = 'member'; // Gets the first role
         
         if (empty($host_phone)) {
             return null;
@@ -801,7 +809,7 @@ class VMS_NotificationManager
 
         $message = "Your visitor {$visitor_name} has arrived. Phone: {$visitor_phone}. Purpose: {$purpose}. Please come to reception.";
         
-        return self::send_sms($host_phone, $message, $host_data['user_id'] ?? null);
+        return self::send_sms($host_phone, $message, $host_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -813,6 +821,7 @@ class VMS_NotificationManager
         $name = $visitor_data['name'] ?? '';
         $badge_number = $visitor_data['badge_number'] ?? '';
         $time = $visitor_data['checkin_time'] ?? date('H:i');
+        $role = 'guest';
         
         if (empty($phone)) {
             return null;
@@ -824,7 +833,7 @@ class VMS_NotificationManager
         }
         $message .= " Enjoy your visit!";
         
-        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null, $role);
     }
 
     /**
@@ -835,6 +844,7 @@ class VMS_NotificationManager
         $phone = $visitor_data['phone'] ?? '';
         $name = $visitor_data['name'] ?? '';
         $checkout_time = $visitor_data['checkout_time'] ?? date('H:i');
+        $role = 'guest';
         
         if (empty($phone)) {
             return null;
@@ -842,7 +852,7 @@ class VMS_NotificationManager
 
         $message = "Thank you for your visit {$name}! You have successfully checked out at {$checkout_time}. Have a great day!";
         
-        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null, $role);
     }
 
     /**
