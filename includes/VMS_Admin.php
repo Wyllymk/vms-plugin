@@ -284,7 +284,7 @@ class VMS_Admin
 
         // Here you would integrate with your SMS service to get balance
         // For now, return mock data
-        $balance = $this->fetch_sms_balance();
+        $balance = VMS_NotificationManager::refresh_sms_balance();
         
         if ($balance !== false) {
             update_option('vms_sms_balance', $balance);
@@ -306,47 +306,13 @@ class VMS_Admin
             wp_die(__('Insufficient permissions.', 'vms'));
         }
 
-        $result = $this->test_sms_connection();
+        $result = VMS_NotificationManager::test_sms_connection();        
         
         if ($result === true) {
             wp_send_json_success();
         } else {
             wp_send_json_error($result);
         }
-    }
-
-    /**
-     * Fetch SMS balance from API
-     */
-    private function fetch_sms_balance()
-    {
-        $api_key = get_option('vms_sms_api_key', '');
-        $api_secret = get_option('vms_sms_api_secret', '');
-        
-        if (empty($api_key) || empty($api_secret)) {
-            return false;
-        }
-
-        // Implement actual API call here
-        // This is a placeholder
-        return rand(100, 1000);
-    }
-
-    /**
-     * Test SMS connection
-     */
-    private function test_sms_connection()
-    {
-        $api_key = get_option('vms_sms_api_key', '');
-        $api_secret = get_option('vms_sms_api_secret', '');
-        
-        if (empty($api_key) || empty($api_secret)) {
-            return __('API credentials not configured', 'vms');
-        }
-
-        // Implement actual connection test here
-        // This is a placeholder
-        return true;
     }
 
     /**
@@ -941,55 +907,7 @@ class VMS_Admin
             ['id' => $log_id],
             ['%d']
         );
-    }
-
-    /**
-     * Get SMS logs with formatting
-     */
-    private function get_sms_logs(int $limit = 50): array
-    {
-        global $wpdb;
-        
-        // Check if table exists
-        $table_name = $wpdb->prefix . 'vms_sms_logs';
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
-            return [];
-        }
-        
-        $logs = $wpdb->get_results($wpdb->prepare(
-            "SELECT 
-                id,
-                user_id,
-                recipient_number,
-                message,
-                status,
-                cost,
-                error_message,
-                created_at
-            FROM {$table_name} 
-            ORDER BY created_at DESC 
-            LIMIT %d",
-            $limit
-        ), ARRAY_A);
-        
-        // Format the data for display
-        foreach ($logs as &$log) {
-            $log['message_preview'] = wp_trim_words($log['message'], 10, '');
-            $log['formatted_date'] = date('M j, Y g:i A', strtotime($log['created_at']));
-            $log['status_class'] = 'status-' . strtolower($log['status']);
-            $log['cost_formatted'] = 'KES ' . number_format($log['cost'], 2);
-            
-            // Get user name if user_id exists
-            if ($log['user_id']) {
-                $user = get_userdata($log['user_id']);
-                $log['user_name'] = $user ? $user->display_name : 'Unknown User';
-            } else {
-                $log['user_name'] = 'System';
-            }
-        }
-        
-        return $logs;
-    }
+    }    
 
     /**
      * Get human-readable SMS status text
