@@ -258,8 +258,13 @@ class VMS_NotificationManager
         $phone = $host_data['phone_number'] ?? '';
         $name = $host_data['first_name'] ?? 'Host';
         $receive_messages = get_user_meta($host_data['user_id'], 'receive_messages', true);
-        $user_data = get_userdata($host_data['user_id']);
-        $role = $user_data->roles[0] ?? ''; // Gets the first role in the array 
+        $role = '';
+        if (!empty($host_data['user_id'])) {
+            $user_data = get_userdata($host_data['user_id']);
+            if ($user_data && !empty($user_data->roles)) {
+                $role = $user_data->roles[0]; // Gets the first role
+            }
+        } 
         
         if (empty($phone) || $receive_messages !== 'yes' || $unapproved_count <= 0) {
             return null;
