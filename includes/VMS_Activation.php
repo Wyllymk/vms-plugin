@@ -235,37 +235,76 @@ class VMS_Activation
     /**
      * Create SMS logs table
      */
-    private static function create_sms_logs_table(): void
+    public static function handle_sms_delivery_callback(): void
     {
-        global $wpdb;
-        $charset_collate = $wpdb->get_charset_collate();
-        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-    
-        $sql = "CREATE TABLE $table_name (
-            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-            user_id BIGINT(20) UNSIGNED DEFAULT NULL,
-            recipient_number VARCHAR(20) NOT NULL,
-            recipient_role ENUM('guest','member','chairman','admin') NOT NULL DEFAULT 'guest',
-            message TEXT NOT NULL,
-            message_id VARCHAR(255) DEFAULT NULL,
-            status VARCHAR(50) NOT NULL DEFAULT 'queued',
-            cost DECIMAL(10,2) DEFAULT NULL,
-            response_data TEXT DEFAULT NULL,
-            error_message TEXT DEFAULT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY user_id (user_id),
-            KEY recipient_number (recipient_number),
-            KEY recipient_role (recipient_role),
-            KEY message_id (message_id),
-            KEY status (status),
-            KEY created_at (created_at)
-        ) ENGINE=InnoDB $charset_collate;";
-    
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-        dbDelta($sql);
+        // Log all incoming data for debugging
+        error_log('SMS Callback received: ' . json_encode($_POST));
+        
+        $status_secret = get_option('vms_status_secret', '');
+        
+        // Verify secret if configured
+        if (!empty($status_secret)) {
+            $received_secret = $_POST['status_secret'] ?? '';
+            if ($received_secret !== $status_secret) {
+                http_response_code(403);
+                echo 'Unauthorized';
+                error_log('Unauthorized callback attempt');
+                exit;
+            }
+        }
+
+        $message_id = $_POST['id'] ?? '';
+        $status     = strtolower($_POST['status'] ?? ''); // normalize to lowercase
+        $reason     = $_POST['reason'] ?? '';
+        $time       = $_POST['time'] ?? '';
+        
+        if (!empty($message_id) && !empty($status)) {
+            // 🚫 Do not process if the incoming status is a final state
+            if (in_array($status, ['delivrd', 'failed'], true)) {
+                error_log("Skipping SMS {$message_id}, status '{$status}' is final.");
+                http_response_code(200);
+                echo 'OK';
+                return;
+            }
+
+            global $wpdb;
+            $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+
+            $update_data = [
+                'status'     => $status,
+                'updated_at' => current_time('mysql')
+            ];
+
+            if (!empty($reason)) {
+                $existing_data = $wpdb->get_var($wpdb->prepare(
+                    "SELECT response_data FROM {$table_name} WHERE message_id = %s",
+                    $message_id
+                ));
+                
+                $response_data = $existing_data ? json_decode($existing_data, true) : [];
+                $response_data['delivery_reason'] = $reason;
+                $response_data['delivery_time']   = $time;
+                
+                $update_data['response_data'] = json_encode($response_data);
+            }
+
+            $updated = $wpdb->update(
+                $table_name,
+                $update_data,
+                ['message_id' => $message_id],
+                array_fill(0, count($update_data), '%s'),
+                ['%s']
+            );
+            
+            if ($updated) {
+                error_log("SMS status updated for message {$message_id}: {$status}");
+            }
+        }
+        
+        http_response_code(200);
+        echo 'OK';
     }
+
         
     /**
      * Add SMS logs cleanup cron job

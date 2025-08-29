@@ -569,15 +569,25 @@ class VMS_NotificationManager
         );
         
         foreach ($pending_messages as $message) {
+            // Get delivery report
             $delivery_report = self::get_delivery_report($message->message_id);
+
             if ($delivery_report && isset($delivery_report['status'])) {
-                self::update_sms_status($message->message_id, strtolower($delivery_report['status']));
+                $new_status = strtolower($delivery_report['status']);
+
+                // Skip final states (do not overwrite or recheck)
+                if (in_array($new_status, ['delivrd', 'failed'], true)) {
+                    self::update_sms_status($message->message_id, $new_status);
+                } else {
+                    self::update_sms_status($message->message_id, $new_status);
+                }
             }
-            
+
             // Small delay to prevent API rate limiting
             usleep(200000); // 0.2 seconds
         }
     }
+
 
     /**
      * Fetch and save SMS balance
