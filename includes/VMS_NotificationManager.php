@@ -64,7 +64,6 @@ class VMS_NotificationManager
         add_action('cleanup_old_sms_logs', [self::class, 'cleanup_old_logs']);
     }
 
-
     /**
      * Send SMS message - UPDATED to include callback URL automatically
      */
@@ -73,19 +72,20 @@ class VMS_NotificationManager
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
         $sender_id = get_option('vms_sms_sender_id', 'SMS_Leopard');
-        
+    
         // Always use our callback URL for status updates
         $callback_url = self::get_callback_url();
         $status_secret = get_option('vms_status_secret', '');
-
+        
+        // Determine recipient role
+        $recipient_role = self::determine_recipient_role($phone, $user_id);
+        
         if (empty($api_key) || empty($api_secret)) {
-            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, 'API credentials not configured');
+            self::log_sms_message($user_id, $phone, $message, $recipient_role, null, 'failed', 0, null, 'API credentials not configured');
             return null;
         }
-
         $clean_phone = self::clean_phone_number($phone);
         $auth = base64_encode($api_key . ':' . $api_secret);
-
         $payload = [
             'source' => $sender_id,
             'message' => $message,
@@ -93,7 +93,6 @@ class VMS_NotificationManager
                 ['number' => $clean_phone]
             ]
         ];
-
         // Always add callback URL for status updates
         if (!empty($callback_url)) {
             $payload['status_url'] = $callback_url;
@@ -101,7 +100,6 @@ class VMS_NotificationManager
                 $payload['status_secret'] = $status_secret;
             }
         }
-
         $response = wp_remote_post(self::$api_base_url . '/sms/send', [
             'headers' => [
                 'Authorization' => 'Basic ' . $auth,
@@ -110,33 +108,28 @@ class VMS_NotificationManager
             'body' => json_encode($payload),
             'timeout' => 30
         ]);
-
         if (is_wp_error($response)) {
             $error_message = $response->get_error_message();
             error_log('SMS API Error: ' . $error_message);
-            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
+            self::log_sms_message($user_id, $phone, $message, $recipient_role, null, 'failed', 0, null, $error_message);
             return null;
         }
-
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-
         if (!$data) {
             $error_message = 'Invalid API response: ' . $body;
             error_log($error_message);
-            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
+            self::log_sms_message($user_id, $phone, $message, $recipient_role, null, 'failed', 0, null, $error_message);
             return null;
         }
-
         // Process response
         if (isset($data['success']) && $data['success'] === true) {
             $recipient = $data['recipients'][0] ?? [];
             $message_id = $recipient['id'] ?? '';
             $cost = $recipient['cost'] ?? 0;
             $status = $recipient['status'] ?? 'sent';
-
-            self::log_sms_message($user_id, $phone, $message, $message_id, $status, $cost, $data);
-            
+            self::log_sms_message($user_id, $phone, $message, $recipient_role, $message_id, $status, $cost, $data);
+        
             return [
                 'success' => true,
                 'message_id' => $message_id,
@@ -146,14 +139,72 @@ class VMS_NotificationManager
             ];
         } else {
             $error_message = $data['message'] ?? 'Unknown error occurred';
-            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, $data, $error_message);
-            
+            self::log_sms_message($user_id, $phone, $message, $recipient_role, null, 'failed', 0, $data, $error_message);
+        
             return [
                 'success' => false,
                 'error' => $error_message,
                 'response_code' => $data['responseCode'] ?? 'UNKNOWN'
             ];
         }
+    }
+
+    /**
+     * Determine recipient role based on phone number and user ID
+     */
+    private static function determine_recipient_role(string $phone, ?int $user_id = null): string
+    {
+        global $wpdb;
+        
+        $clean_phone = self::clean_phone_number($phone);
+        
+        // First check if this is a WordPress user (member, chairman, admin)
+        if ($user_id) {
+            $user = get_user_by('ID', $user_id);
+            if ($user) {
+                $user_roles = $user->roles;
+                if (in_array('administrator', $user_roles)) {
+                    return 'admin';
+                } elseif (in_array('chairman', $user_roles)) {
+                    return 'chairman';
+                } elseif (in_array('member', $user_roles)) {
+                    return 'member';
+                }
+            }
+        }
+        
+        // Check if phone belongs to any WordPress user
+        $user_query = new \WP_User_Query([
+            'meta_key' => 'phone_number',
+            'meta_value' => $clean_phone,
+            'number' => 1
+        ]);
+        
+        if (!empty($user_query->results)) {
+            $user = $user_query->results[0];
+            $user_roles = $user->roles;
+            if (in_array('administrator', $user_roles)) {
+                return 'admin';
+            } elseif (in_array('chairman', $user_roles)) {
+                return 'chairman';
+            } elseif (in_array('member', $user_roles)) {
+                return 'member';
+            }
+        }
+        
+        // Check guests table
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $guests_table WHERE phone_number = %s LIMIT 1",
+            $clean_phone
+        ));
+        
+        if ($guest) {
+            return 'guest';
+        }
+        
+        // Default to guest if not found anywhere
+        return 'guest';
     }
 
     /**
@@ -468,28 +519,30 @@ class VMS_NotificationManager
     }
 
 
-   /**
+    /**
      * Log SMS message to database
      */
     private static function log_sms_message(
-        ?int $user_id, 
-        string $phone, 
-        string $message, 
-        ?string $message_id, 
-        string $status, 
-        float $cost = 0, 
-        ?array $response_data = null, 
+        ?int $user_id,
+        string $phone,
+        string $message,
+        string $recipient_role,
+        ?string $message_id,
+        string $status,
+        float $cost = 0,
+        ?array $response_data = null,
         ?string $error_message = null
     ): bool {
         global $wpdb;
-        
+    
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
+    
         return (bool) $wpdb->insert(
             $table_name,
             [
                 'user_id' => $user_id,
                 'recipient_number' => $phone,
+                'recipient_role' => $recipient_role,
                 'message' => $message,
                 'message_id' => $message_id,
                 'status' => $status,
@@ -497,10 +550,9 @@ class VMS_NotificationManager
                 'response_data' => $response_data ? json_encode($response_data) : null,
                 'error_message' => $error_message
             ],
-            ['%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s']
+            ['%d', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s']
         );
     }
-
 
     /**
      * Get delivery report for a message

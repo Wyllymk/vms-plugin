@@ -233,18 +233,19 @@ class VMS_Activation
     }
 
     /**
-    * Create SMS logs table
-    */
+     * Create SMS logs table
+     */
     private static function create_sms_logs_table(): void
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
+    
         $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT(20) UNSIGNED DEFAULT NULL,
             recipient_number VARCHAR(20) NOT NULL,
+            recipient_role ENUM('guest','member','chairman','admin') NOT NULL DEFAULT 'guest',
             message TEXT NOT NULL,
             message_id VARCHAR(255) DEFAULT NULL,
             status ENUM('sent','failed','queued','delivered','expired','undelivered') NOT NULL DEFAULT 'queued',
@@ -256,15 +257,16 @@ class VMS_Activation
             PRIMARY KEY (id),
             KEY user_id (user_id),
             KEY recipient_number (recipient_number),
+            KEY recipient_role (recipient_role),
             KEY message_id (message_id),
             KEY status (status),
             KEY created_at (created_at)
         ) ENGINE=InnoDB $charset_collate;";
-        
+    
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
-    
+        
     /**
      * Add SMS logs cleanup cron job
      */
