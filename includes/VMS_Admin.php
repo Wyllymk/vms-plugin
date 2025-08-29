@@ -504,7 +504,7 @@ class VMS_Admin
                 </td>
                 <td class="column-message" title="<?php echo esc_attr($log['message']); ?>">
                     <div class="message-preview">
-                        <?php echo esc_html($log['message_preview']); ?>
+                        <span class="message-text"><?php echo esc_html($log['message_preview']); ?></span>
                         <?php if (strlen($log['message']) > 50): ?>
                         <span class="message-toggle" data-full="<?php echo esc_attr($log['message']); ?>"
                             data-preview="<?php echo esc_attr($log['message_preview']); ?>">
@@ -513,6 +513,7 @@ class VMS_Admin
                         <?php endif; ?>
                     </div>
                 </td>
+
                 <td class="column-status">
                     <span class="status-badge <?php echo esc_attr($log['status_class']); ?>">
                         <?php echo esc_html($this->get_status_text($log['status'])); ?>
@@ -776,16 +777,17 @@ class VMS_Admin
 
     <script type="text/javascript">
     function toggleMessage(element) {
-        var messageDiv = element.parentNode.parentNode;
-        var preview = element.getAttribute('data-preview');
-        var full = element.getAttribute('data-full');
-        var currentText = messageDiv.querySelector('.message-preview').firstChild.textContent;
+        var messageDiv = element.closest('.message-preview');
+        var messageText = messageDiv.querySelector('.message-text');
+        var toggle = element.parentNode;
+        var preview = toggle.getAttribute('data-preview');
+        var full = toggle.getAttribute('data-full');
 
-        if (currentText === preview) {
-            messageDiv.querySelector('.message-preview').firstChild.textContent = full;
+        if (messageText.textContent === preview) {
+            messageText.textContent = full;
             element.textContent = 'Show less';
         } else {
-            messageDiv.querySelector('.message-preview').firstChild.textContent = preview;
+            messageText.textContent = preview;
             element.textContent = 'Show more';
         }
     }

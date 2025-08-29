@@ -749,6 +749,7 @@ class VMS_CoreManager
             'id' => $visit->guest_id,
             'first_name' => $visit->first_name,
             'last_name' => $visit->last_name,
+            'sign_in_time' => $visit->sign_in_time,
             'sign_out_time' => $signout_time,
             'visit_id' => $visit_id
         ];
