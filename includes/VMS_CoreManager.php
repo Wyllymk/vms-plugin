@@ -499,6 +499,8 @@ class VMS_CoreManager
     public static function handle_guest_status_update(): void
     {
         self::verify_ajax_request();
+
+        error_log("handle_guest_status_update called");
         
         $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
         $new_status = sanitize_text_field($_POST['guest_status'] ?? '');
@@ -557,6 +559,7 @@ class VMS_CoreManager
         );
 
         self::send_guest_status_change_email($guest_data, $old_status, $new_status);
+        self::send_guest_status_change_sms($guest_data, $old_status, $new_status);
 
         wp_send_json_success(['messages' => ['Guest status updated successfully']]);
     }
@@ -1069,6 +1072,8 @@ class VMS_CoreManager
             return;
         }
 
+        error_log("EMAIL: Guest status changed from {$old_status} to {$new_status} for guest ID {$guest_data['user_id']}");
+
         $subject = 'Account Status Update - Nyeri Club';
         $message = "Dear {$guest_data['first_name']},\n\n";
         
@@ -1103,6 +1108,61 @@ class VMS_CoreManager
         $message .= "Nyeri Club Visitor Management System";
 
         wp_mail($guest_data['email'], $subject, $message);
+    }
+
+    /**
+     * Send SMS notification to guest on status change
+     *
+     * @param array  $guest_data  Guest info (must include: user_id, first_name, phone_number, receive_messages)
+     * @param string $old_status  Previous status
+     * @param string $new_status  New status
+     */
+    private static function send_guest_status_change_sms(array $guest_data, string $old_status, string $new_status): void
+    {
+        // Ensure required data exists
+        if (empty($guest_data['phone_number']) || ($guest_data['receive_messages'] ?? 'no') !== 'yes') {
+            return;
+        }
+
+        $guest_id   = $guest_data['user_id'] ?? 0;
+        $first_name = $guest_data['first_name'] ?? 'Guest';
+        $phone      = $guest_data['phone_number'];
+        $role       = 'guest';
+
+        // Debug log
+        error_log("SMS Triggered: Guest status changed from {$old_status} to {$new_status} for guest ID {$guest_id}");
+
+        // Base message
+        $message = "Nyeri Club: Dear {$first_name}, ";
+
+        switch ($new_status) {
+            case 'suspended':
+                $message .= "your guest access has been temporarily suspended";
+                if ($old_status === 'active') {
+                    $message .= " (visit limit exceeded)";
+                }
+                $message .= ". Contact reception for help.";
+                break;
+
+            case 'banned':
+                $message .= "your guest access has been permanently revoked. Please contact management.";
+                break;
+
+            case 'active':
+                // Only notify if status was previously restricted
+                if (in_array($old_status, ['suspended', 'banned'])) {
+                    $message .= "your guest access has been restored. You may now request new visits.";
+                } else {
+                    return; // Skip unnecessary notifications
+                }
+                break;
+
+            default:
+                return; // Unknown status → no notification
+        }
+
+        // Send SMS through notification manager (handles logging + DB insert)
+        VMS_NotificationManager::send_sms($phone, $message, $guest_id, $role);
     }
 
     /**
@@ -2333,16 +2393,20 @@ class VMS_CoreManager
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
-        // Check if guest exists
-        $existing_guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $guests_table WHERE id = %d",
+        // Fetch existing guest before update
+        $guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $guests_table WHERE id = %d",
             $guest_id
         ));
 
-        if (!$existing_guest) {
+        if (!$guest) {
             wp_send_json_error(['messages' => ['Guest not found']]);
             return;
         }
+
+        // Save old and new status
+        $old_status = $guest->guest_status;
+        $new_status = $guest_status;
 
         // Check if ID number is already used by another guest
         $id_number_exists = $wpdb->get_row($wpdb->prepare(
@@ -2364,7 +2428,7 @@ class VMS_CoreManager
                 'email'            => $email,
                 'phone_number'     => $phone_number,
                 'id_number'        => $id_number,
-                'guest_status'     => $guest_status,
+                'guest_status'     => $new_status,
                 'receive_messages' => $receive_messages,
                 'receive_emails'   => $receive_emails,
                 'updated_at'       => current_time('mysql')
@@ -2379,10 +2443,27 @@ class VMS_CoreManager
             return;
         }
 
+        // Build guest data array
+        $guest_data = [
+            'first_name'       => $first_name,
+            'phone_number'     => $phone_number,
+            'email'            => $email,
+            'receive_messages' => $receive_messages,
+            'receive_emails'   => $receive_emails,
+            'user_id'          => $guest_id
+        ];
+
+        // Send notifications if status changed
+        if ($old_status !== $new_status) {
+            self::send_guest_status_change_email($guest_data, $old_status, $new_status);
+            self::send_guest_status_change_sms($guest_data, $old_status, $new_status);
+        }
+
         wp_send_json_success([
             'message' => 'Guest updated successfully'
         ]);
     }
+
 
     // Handle guest deletion via AJAX
     public static function handle_guest_deletion() 

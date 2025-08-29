@@ -305,6 +305,7 @@ class VMS_Database
         $formats[] = '%s';
 
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        
         return (bool) $wpdb->update(
             $guests_table,
             $filtered_data,
