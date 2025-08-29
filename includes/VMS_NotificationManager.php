@@ -26,7 +26,7 @@ class VMS_NotificationManager
      * SMS Leopard API base URL
      * @var string
      */
-    private $api_base_url = 'https://api.smsleopard.com/v1';
+    private static $api_base_url = 'https://api.smsleopard.com/v1';
 
     /**
      * Get singleton instance
@@ -45,45 +45,45 @@ class VMS_NotificationManager
      */
     public function init(): void
     {
-        $this->setup_hooks();
+        self::setup_hooks();
     }
 
     /**
      * Setup hooks
      */
-    private function setup_hooks(): void
+    private static function setup_hooks(): void
     {
-        add_action('wp_ajax_refresh_sms_balance', [$this, 'refresh_sms_balance']);
-        add_action('wp_ajax_test_sms_connection', [$this, 'test_sms_connection']);
-        add_action('sms_balance_cron', [$this, 'fetch_and_save_sms_balance']);
-        add_action('wp_ajax_nopriv_vms_status_callback', [$this, 'handle_status_callback']);
-        add_action('wp_ajax_vms_status_callback', [$this, 'handle_status_callback']);
+        add_action('wp_ajax_refresh_sms_balance', [self::class, 'refresh_sms_balance']);
+        add_action('wp_ajax_test_sms_connection', [self::class, 'test_sms_connection']);
+        add_action('sms_balance_cron', [self::class, 'fetch_and_save_sms_balance']);
+        add_action('wp_ajax_nopriv_vms_status_callback', [self::class, 'handle_status_callback']);
+        add_action('wp_ajax_vms_status_callback', [self::class, 'handle_status_callback']);
         
         // NEW: Add SMS delivery status check and cleanup
-        add_action('check_sms_delivery_status', [$this, 'check_pending_sms_delivery']);
-        add_action('cleanup_old_sms_logs', [$this, 'cleanup_old_logs']);
+        add_action('check_sms_delivery_status', [self::class, 'check_pending_sms_delivery']);
+        add_action('cleanup_old_sms_logs', [self::class, 'cleanup_old_logs']);
     }
 
 
     /**
      * Send SMS message - UPDATED to include callback URL automatically
      */
-    public function send_sms(string $phone, string $message, ?int $user_id = null): ?array
+    public static function send_sms(string $phone, string $message, ?int $user_id = null): ?array
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
         $sender_id = get_option('vms_sms_sender_id', 'SMS_Leopard');
         
         // Always use our callback URL for status updates
-        $callback_url = $this->get_callback_url();
+        $callback_url = self::get_callback_url();
         $status_secret = get_option('vms_status_secret', '');
 
         if (empty($api_key) || empty($api_secret)) {
-            $this->log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, 'API credentials not configured');
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, 'API credentials not configured');
             return null;
         }
 
-        $clean_phone = $this->clean_phone_number($phone);
+        $clean_phone = self::clean_phone_number($phone);
         $auth = base64_encode($api_key . ':' . $api_secret);
 
         $payload = [
@@ -102,7 +102,7 @@ class VMS_NotificationManager
             }
         }
 
-        $response = wp_remote_post($this->api_base_url . '/sms/send', [
+        $response = wp_remote_post(self::$api_base_url . '/sms/send', [
             'headers' => [
                 'Authorization' => 'Basic ' . $auth,
                 'Content-Type' => 'application/json'
@@ -114,7 +114,7 @@ class VMS_NotificationManager
         if (is_wp_error($response)) {
             $error_message = $response->get_error_message();
             error_log('SMS API Error: ' . $error_message);
-            $this->log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
             return null;
         }
 
@@ -124,7 +124,7 @@ class VMS_NotificationManager
         if (!$data) {
             $error_message = 'Invalid API response: ' . $body;
             error_log($error_message);
-            $this->log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, null, $error_message);
             return null;
         }
 
@@ -135,7 +135,7 @@ class VMS_NotificationManager
             $cost = $recipient['cost'] ?? 0;
             $status = $recipient['status'] ?? 'sent';
 
-            $this->log_sms_message($user_id, $phone, $message, $message_id, $status, $cost, $data);
+            self::log_sms_message($user_id, $phone, $message, $message_id, $status, $cost, $data);
             
             return [
                 'success' => true,
@@ -146,7 +146,7 @@ class VMS_NotificationManager
             ];
         } else {
             $error_message = $data['message'] ?? 'Unknown error occurred';
-            $this->log_sms_message($user_id, $phone, $message, null, 'failed', 0, $data, $error_message);
+            self::log_sms_message($user_id, $phone, $message, null, 'failed', 0, $data, $error_message);
             
             return [
                 'success' => false,
@@ -159,14 +159,14 @@ class VMS_NotificationManager
     /**
      * Send SMS to multiple recipients
      */
-    public function send_bulk_sms(array $recipients, string $message): array
+    public static function send_bulk_sms(array $recipients, string $message): array
     {
         $results = [];
         foreach ($recipients as $recipient) {
             $phone = $recipient['phone'] ?? $recipient;
             $user_id = $recipient['user_id'] ?? null;
             
-            $result = $this->send_sms($phone, $message, $user_id);
+            $result = self::send_sms($phone, $message, $user_id);
             $results[] = [
                 'phone' => $phone,
                 'result' => $result
@@ -182,7 +182,7 @@ class VMS_NotificationManager
     /**
      * NEW: Send guest status change notification (suspended/banned)
      */
-    public function send_guest_status_notification(array $guest_data, string $old_status, string $new_status): ?array
+    public static function send_guest_status_notification(array $guest_data, string $old_status, string $new_status): ?array
     {
         $phone = $guest_data['phone_number'] ?? '';
         $name = $guest_data['first_name'] ?? '';
@@ -219,13 +219,13 @@ class VMS_NotificationManager
                 return null;
         }
         
-        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
     }
 
     /**
      * NEW: Send visit status change notification (approved/unapproved)
      */
-    public function send_visit_status_notification(array $guest_data, array $visit_data, string $old_status, string $new_status): ?array
+    public static function send_visit_status_notification(array $guest_data, array $visit_data, string $old_status, string $new_status): ?array
     {
         $phone = $guest_data['phone_number'] ?? '';
         $name = $guest_data['first_name'] ?? '';
@@ -255,13 +255,13 @@ class VMS_NotificationManager
                 return null;
         }
         
-        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
     }
 
     /**
      * NEW: Send host daily limit notification
      */
-    public function send_host_limit_notification(array $host_data, string $visit_date, int $unapproved_count): ?array
+    public static function send_host_limit_notification(array $host_data, string $visit_date, int $unapproved_count): ?array
     {
         $phone = $host_data['phone_number'] ?? '';
         $name = $host_data['first_name'] ?? 'Host';
@@ -275,13 +275,13 @@ class VMS_NotificationManager
         $message = "Nyeri Club: Dear {$name}, you have exceeded your daily guest limit (4) for {$formatted_date}. ";
         $message .= "{$unapproved_count} guest(s) are pending approval and will be notified once slots become available.";
         
-        return $this->send_sms($phone, $message, $host_data['user_id']);
+        return self::send_sms($phone, $message, $host_data['user_id']);
     }
 
     /**
      * NEW: Send sign-in confirmation SMS
      */
-    public function send_signin_notification(array $guest_data, array $visit_data): ?array
+    public static function send_signin_notification(array $guest_data, array $visit_data): ?array
     {
         $phone = $guest_data['phone_number'] ?? '';
         $name = $guest_data['first_name'] ?? '';
@@ -294,13 +294,13 @@ class VMS_NotificationManager
 
         $message = "Nyeri Club: Welcome {$name}! You have successfully signed in at {$signin_time}. Enjoy your visit!";
         
-        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
     }
 
     /**
      * NEW: Send sign-out confirmation SMS
      */
-    public function send_signout_notification(array $guest_data, array $visit_data): ?array
+    public static function send_signout_notification(array $guest_data, array $visit_data): ?array
     {
         $phone = $guest_data['phone_number'] ?? '';
         $name = $guest_data['first_name'] ?? '';
@@ -313,13 +313,13 @@ class VMS_NotificationManager
 
         $message = "Nyeri Club: Thank you for your visit {$name}! You have successfully signed out at {$signout_time}. Have a great day!";
         
-        return $this->send_sms($phone, $message, $guest_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $guest_data['user_id'] ?? null);
     }
 
     /**
      * Handle SMS delivery callback from SMS Leopard - UPDATED
      */
-    public function handle_sms_delivery_callback(): void
+    public static function handle_sms_delivery_callback(): void
     {
         // Log all incoming data for debugging
         error_log('SMS Callback received: ' . json_encode($_POST));
@@ -386,7 +386,7 @@ class VMS_NotificationManager
     /**
      * Get callback URL for SMS status updates
      */
-    public function get_callback_url(): string
+    public static function get_callback_url(): string
     {
         return home_url('/vms-sms-callback/');
     }
@@ -396,7 +396,7 @@ class VMS_NotificationManager
     /**
      * Get recent SMS logs for dashboard - UPDATED to use new table
      */
-    public function get_recent_sms_logs(int $limit = 10): array
+    public static function get_recent_sms_logs(int $limit = 10): array
     {
         global $wpdb;
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
@@ -412,7 +412,7 @@ class VMS_NotificationManager
     /**
      * Get SMS statistics - UPDATED to use new table
      */
-    public function get_sms_statistics(int $days = 30): array
+    public static function get_sms_statistics(int $days = 30): array
     {
         global $wpdb;
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
@@ -446,7 +446,7 @@ class VMS_NotificationManager
     /**
      * Clean and format phone number for Kenyan numbers
      */
-    public function clean_phone_number(string $phone): string
+    public static function clean_phone_number(string $phone): string
     {
         $digits = preg_replace('/[^0-9]/', '', $phone);
         
@@ -471,7 +471,7 @@ class VMS_NotificationManager
    /**
      * Log SMS message to database
      */
-    private function log_sms_message(
+    private static function log_sms_message(
         ?int $user_id, 
         string $phone, 
         string $message, 
@@ -505,7 +505,7 @@ class VMS_NotificationManager
     /**
      * Get delivery report for a message
      */
-    public function get_delivery_report(string $message_id): ?array
+    public static function get_delivery_report(string $message_id): ?array
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
@@ -516,7 +516,7 @@ class VMS_NotificationManager
 
         $auth = base64_encode($api_key . ':' . $api_secret);
 
-        $response = wp_remote_get($this->api_base_url . '/delivery_reports/' . $message_id, [
+        $response = wp_remote_get(self::$api_base_url . '/delivery_reports/' . $message_id, [
             'headers' => [
                 'Authorization' => 'Basic ' . $auth,
                 'Content-Type' => 'application/json'
@@ -534,7 +534,7 @@ class VMS_NotificationManager
 
         if ($data && isset($data['status'])) {
             // Update local log with delivery status
-            $this->update_sms_status($message_id, $data['status']);
+            self::update_sms_status($message_id, $data['status']);
             return $data;
         }
 
@@ -544,7 +544,7 @@ class VMS_NotificationManager
     /**
      * Update SMS status in logs
      */
-    private function update_sms_status(string $message_id, string $status): bool
+    private static function update_sms_status(string $message_id, string $status): bool
     {
         global $wpdb;
         
@@ -562,7 +562,7 @@ class VMS_NotificationManager
     /**
      * NEW: Check delivery status for pending SMS
      */
-    public function check_pending_sms_delivery(): void
+    public static function check_pending_sms_delivery(): void
     {
         global $wpdb;
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
@@ -577,9 +577,9 @@ class VMS_NotificationManager
         );
         
         foreach ($pending_messages as $message) {
-            $delivery_report = $this->get_delivery_report($message->message_id);
+            $delivery_report = self::get_delivery_report($message->message_id);
             if ($delivery_report && isset($delivery_report['status'])) {
-                $this->update_sms_status($message->message_id, strtolower($delivery_report['status']));
+                self::update_sms_status($message->message_id, strtolower($delivery_report['status']));
             }
             
             // Small delay to prevent API rate limiting
@@ -590,7 +590,7 @@ class VMS_NotificationManager
     /**
      * Fetch and save SMS balance
      */
-    public function fetch_and_save_sms_balance(): void
+    public static function fetch_and_save_sms_balance(): void
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
@@ -602,7 +602,7 @@ class VMS_NotificationManager
 
         $auth = base64_encode($api_key . ':' . $api_secret);
 
-        $response = wp_remote_get($this->api_base_url . '/balance', [
+        $response = wp_remote_get(self::$api_base_url . '/balance', [
             'headers' => [
                 'Authorization' => 'Basic ' . $auth,
                 'Content-Type' => 'application/json'
@@ -637,7 +637,7 @@ class VMS_NotificationManager
     /**
      * AJAX handler to refresh SMS balance
      */
-    public function refresh_sms_balance(): void
+    public static function refresh_sms_balance(): void
     {
         check_ajax_referer('refresh_balance_nonce', 'nonce');
         
@@ -645,7 +645,7 @@ class VMS_NotificationManager
             wp_send_json_error('Unauthorized');
         }
 
-        $this->fetch_and_save_sms_balance();
+        self::fetch_and_save_sms_balance();
         
         $balance = get_option('vms_sms_balance', 0);
         if ($balance > 0) {
@@ -658,7 +658,7 @@ class VMS_NotificationManager
     /**
      * Test SMS connection
      */
-    public function test_sms_connection(): void
+    public static function test_sms_connection(): void
     {
         check_ajax_referer('test_connection_nonce', 'nonce');
         
@@ -703,18 +703,18 @@ class VMS_NotificationManager
     /**
      * Send test SMS
      */
-    public function send_test_sms(string $phone): ?array
+    public static function send_test_sms(string $phone): ?array
     {
         $message = 'Test message from VMS. Your SMS integration is working correctly!';
-        return $this->send_sms($phone, $message);
+        return self::send_sms($phone, $message);
     }
 
     /**
      * Validate phone number format
      */
-    public function validate_phone_number(string $phone): bool
+    public static function validate_phone_number(string $phone): bool
     {
-        $clean_phone = $this->clean_phone_number($phone);
+        $clean_phone = self::clean_phone_number($phone);
         
         // Check if it's a valid Kenyan number (254 + 9 digits)
         return preg_match('/^254[17]\d{8}$/', $clean_phone) === 1;
@@ -723,7 +723,7 @@ class VMS_NotificationManager
     /**
      * Handle status callback from SMS Leopard
      */
-    public function handle_status_callback(): void
+    public static function handle_status_callback(): void
     {
         $status_secret = get_option('vms_status_secret', '');
         
@@ -738,7 +738,7 @@ class VMS_NotificationManager
         $status = $_POST['status'] ?? '';
         
         if (!empty($message_id) && !empty($status)) {
-            $this->update_sms_status($message_id, strtolower($status));
+            self::update_sms_status($message_id, strtolower($status));
         }
         
         // Respond with 200 OK
@@ -750,7 +750,7 @@ class VMS_NotificationManager
     /**
      * Cleanup old SMS logs - UPDATED to clean logs older than 90 days
      */
-    public function cleanup_old_logs(int $days = 90): int
+    public static function cleanup_old_logs(int $days = 90): int
     {
         global $wpdb;
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
@@ -766,7 +766,7 @@ class VMS_NotificationManager
     /**
      * Send visitor notification SMS
      */
-    public function send_visitor_notification(array $visitor_data): ?array
+    public static function send_visitor_notification(array $visitor_data): ?array
     {
         $phone = $visitor_data['phone'] ?? '';
         $name = $visitor_data['name'] ?? '';
@@ -780,13 +780,13 @@ class VMS_NotificationManager
 
         $message = "Hi {$name}, your visit to see {$host} on {$date} at {$time} has been scheduled. Please arrive on time. Thank you.";
         
-        return $this->send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
     }
 
     /**
      * Send host notification SMS
      */
-    public function send_host_notification(array $host_data, array $visitor_data): ?array
+    public static function send_host_notification(array $host_data, array $visitor_data): ?array
     {
         $host_phone = $host_data['phone'] ?? '';
         $visitor_name = $visitor_data['name'] ?? '';
@@ -799,13 +799,13 @@ class VMS_NotificationManager
 
         $message = "Your visitor {$visitor_name} has arrived. Phone: {$visitor_phone}. Purpose: {$purpose}. Please come to reception.";
         
-        return $this->send_sms($host_phone, $message, $host_data['user_id'] ?? null);
+        return self::send_sms($host_phone, $message, $host_data['user_id'] ?? null);
     }
 
     /**
      * Send check-in confirmation SMS
      */
-    public function send_checkin_confirmation(array $visitor_data): ?array
+    public static function send_checkin_confirmation(array $visitor_data): ?array
     {
         $phone = $visitor_data['phone'] ?? '';
         $name = $visitor_data['name'] ?? '';
@@ -822,13 +822,13 @@ class VMS_NotificationManager
         }
         $message .= " Enjoy your visit!";
         
-        return $this->send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
     }
 
     /**
      * Send check-out confirmation SMS
      */
-    public function send_checkout_confirmation(array $visitor_data): ?array
+    public static function send_checkout_confirmation(array $visitor_data): ?array
     {
         $phone = $visitor_data['phone'] ?? '';
         $name = $visitor_data['name'] ?? '';
@@ -840,13 +840,13 @@ class VMS_NotificationManager
 
         $message = "Thank you for your visit {$name}! You have successfully checked out at {$checkout_time}. Have a great day!";
         
-        return $this->send_sms($phone, $message, $visitor_data['user_id'] ?? null);
+        return self::send_sms($phone, $message, $visitor_data['user_id'] ?? null);
     }
 
     /**
      * Get SMS balance information
      */
-    public function get_balance_info(): array
+    public static function get_balance_info(): array
     {
         return [
             'balance' => get_option('vms_sms_balance', 0),
@@ -860,7 +860,7 @@ class VMS_NotificationManager
     /**
      * Check if SMS service is configured
      */
-    public function is_configured(): bool
+    public static function is_configured(): bool
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
@@ -871,7 +871,7 @@ class VMS_NotificationManager
     /**
      * Get SMS quota status
      */
-    public function get_quota_status(): array
+    public static function get_quota_status(): array
     {
         $balance = get_option('vms_sms_balance', 0);
         $low_balance_threshold = 50; // KES

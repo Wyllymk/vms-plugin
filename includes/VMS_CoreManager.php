@@ -40,9 +40,9 @@ class VMS_CoreManager
      */
     public function init(): void
     {
-        $this->setup_authentication_hooks();
-        $this->setup_security_hooks();
-        $this->setup_guest_management_hooks();
+        self::setup_authentication_hooks();
+        self::setup_security_hooks();
+        self::setup_guest_management_hooks();
     }
 
     /**
@@ -50,56 +50,56 @@ class VMS_CoreManager
      */
     private function setup_authentication_hooks(): void
     {
-        add_action('login_init', [$this, 'handle_custom_login_redirect']);
-        add_filter('login_redirect', [$this, 'custom_login_redirect'], 10, 3);
-        add_filter('wp_authenticate_user', [$this, 'validate_user_status'], 10, 1);
-        add_filter('retrieve_password_message', [$this, 'custom_password_reset_email'], 10, 4);
+        add_action('login_init', [self::class, 'handle_custom_login_redirect']);
+        add_filter('login_redirect', [self::class, 'custom_login_redirect'], 10, 3);
+        add_filter('wp_authenticate_user', [self::class, 'validate_user_status'], 10, 1);
+        add_filter('retrieve_password_message', [self::class, 'custom_password_reset_email'], 10, 4);
     }
 
     /**
      * Setup security related hooks
      */
-    private function setup_security_hooks(): void
+    private static function setup_security_hooks(): void
     {
-        add_action('admin_init', [$this, 'restrict_admin_access']);
-        add_action('after_setup_theme', [$this, 'manage_admin_bar']);
+        add_action('admin_init', [self::class, 'restrict_admin_access']);
+        add_action('after_setup_theme', [self::class, 'manage_admin_bar']);
     }
 
     /**
      * Setup guest management related hooks
      */
-    private function setup_guest_management_hooks(): void
+    private static function setup_guest_management_hooks(): void
     {
         // Hook the AJAX actions
-        add_action( 'wp_ajax_vms_ajax_test_connection', [$this, 'vms_ajax_test_connection'] );
-        add_action( 'wp_ajax_vms_ajax_save_settings', [$this, 'vms_ajax_save_settings'] );
-        add_action('wp_ajax_vms_ajax_refresh_balance', [$this, 'vms_ajax_refresh_balance']);
+        add_action( 'wp_ajax_vms_ajax_test_connection', [self::class, 'vms_ajax_test_connection'] );
+        add_action( 'wp_ajax_vms_ajax_save_settings', [self::class, 'vms_ajax_save_settings'] );
+        add_action('wp_ajax_vms_ajax_refresh_balance', [self::class, 'vms_ajax_refresh_balance']);
 
-        add_action('wp_ajax_guest_registration', [$this, 'handle_guest_registration']);
-        add_action('wp_ajax_courtesy_guest_registration', [$this, 'handle_courtesy_guest_registration']);
-        add_action('wp_ajax_update_guest', [$this, 'handle_guest_update']);
-        add_action('wp_ajax_delete_guest', [$this, 'handle_guest_deletion']);
-        add_action('wp_ajax_register_visit', [$this, 'handle_visit_registration']);
+        add_action('wp_ajax_guest_registration', [self::class, 'handle_guest_registration']);
+        add_action('wp_ajax_courtesy_guest_registration', [self::class, 'handle_courtesy_guest_registration']);
+        add_action('wp_ajax_update_guest', [self::class, 'handle_guest_update']);
+        add_action('wp_ajax_delete_guest', [self::class, 'handle_guest_deletion']);
+        add_action('wp_ajax_register_visit', [self::class, 'handle_visit_registration']);
 
-        add_action('wp_ajax_sign_in_guest', [$this, 'handle_sign_in_guest']);
-        add_action('wp_ajax_sign_out_guest', [$this, 'handle_sign_out_guest']);
-        add_action('auto_update_visit_status_at_midnight', [$this, 'auto_update_visit_statuses']);
-        add_action('auto_sign_out_guests_at_midnight', [$this, 'auto_sign_out_guests']);
-        add_action('reset_monthly_guest_limits', [$this, 'reset_monthly_limits']);
-        add_action('reset_yearly_guest_limits', [$this, 'reset_yearly_limits']);
+        add_action('wp_ajax_sign_in_guest', [self::class, 'handle_sign_in_guest']);
+        add_action('wp_ajax_sign_out_guest', [self::class, 'handle_sign_out_guest']);
+        add_action('auto_update_visit_status_at_midnight', [self::class, 'auto_update_visit_statuses']);
+        add_action('auto_sign_out_guests_at_midnight', [self::class, 'auto_sign_out_guests']);
+        add_action('reset_monthly_guest_limits', [self::class, 'reset_monthly_limits']);
+        add_action('reset_yearly_guest_limits', [self::class, 'reset_yearly_limits']);
 
         // NEW: Add cancellation handler
-        add_action('wp_ajax_cancel_visit', [$this, 'handle_visit_cancellation']);
-        add_action('wp_ajax_update_guest_status', [$this, 'handle_guest_status_update']);
-        add_action('wp_ajax_update_visit_status', [$this, 'handle_visit_status_update']);
+        add_action('wp_ajax_cancel_visit', [self::class, 'handle_visit_cancellation']);
+        add_action('wp_ajax_update_guest_status', [self::class, 'handle_guest_status_update']);
+        add_action('wp_ajax_update_visit_status', [self::class, 'handle_visit_status_update']);
 
-        add_action('admin_init', [$this, 'handle_status_setup']);
+        add_action('admin_init', [self::class, 'handle_status_setup']);
     }
 
     /**
      * Setup automatic status URL in settings if not already configured
      */
-    public function handle_status_setup(): void
+    public static function handle_status_setup(): void
     {
         
         $status_url = get_option('vms_status_url', '');
@@ -121,7 +121,7 @@ class VMS_CoreManager
     /**
      * Handle custom login page redirect
      */
-    public function handle_custom_login_redirect(): void
+    public static function handle_custom_login_redirect(): void
     {
         if ( is_user_logged_in() || wp_doing_ajax() ) {
             return;
@@ -161,7 +161,7 @@ class VMS_CoreManager
     /**
      * Custom login redirect based on user role
      */
-    public function custom_login_redirect(string $redirect_to, string $request, WP_User $user): string
+    public static function custom_login_redirect(string $redirect_to, string $request, WP_User $user): string
     {
         if (isset($user->roles) && is_array($user->roles)) {
             return esc_url(home_url('/dashboard'));
@@ -175,7 +175,7 @@ class VMS_CoreManager
      * @param WP_User|WP_Error $user
      * @return WP_User|WP_Error
      */
-    public function validate_user_status($user)
+    public static function validate_user_status($user)
     {
         if (is_wp_error($user)) {
             return $user;
@@ -221,7 +221,7 @@ class VMS_CoreManager
     /**
      * Custom password reset email
      */
-    public function custom_password_reset_email(string $message, string $key, string $user_login, WP_User $user_data): string
+    public static function custom_password_reset_email(string $message, string $key, string $user_login, WP_User $user_data): string
     {
         $reset_url = add_query_arg([
             'key'   => $key,
@@ -249,7 +249,7 @@ class VMS_CoreManager
     /**
      * Restrict admin access for non-admins
      */
-    public function restrict_admin_access(): void
+    public static function restrict_admin_access(): void
     {
         if (!current_user_can('manage_options') && !(defined('DOING_AJAX') && DOING_AJAX)) {
             wp_redirect(home_url('/dashboard'));
@@ -260,7 +260,7 @@ class VMS_CoreManager
     /**
      * Manage admin bar visibility
      */
-    public function manage_admin_bar(): void
+    public static function manage_admin_bar(): void
     {
         if (!current_user_can('administrator') && !is_admin()) {
             show_admin_bar(false);
@@ -270,8 +270,9 @@ class VMS_CoreManager
     /**
      * AJAX handler for saving settings
      */
-    public function vms_ajax_save_settings() {
-        $this->verify_ajax_request();
+    public static function vms_ajax_save_settings() 
+    {
+        self::verify_ajax_request();
         
         // Check user permissions
         if (!current_user_can('administrator') && !current_user_can('reception') && 
@@ -323,8 +324,9 @@ class VMS_CoreManager
     /**
      * AJAX handler for testing connection
      */
-    public function vms_ajax_test_connection() {
-        $this->verify_ajax_request();
+    public static function vms_ajax_test_connection() 
+    {
+        self::verify_ajax_request();
         
         $api_key = sanitize_text_field($_POST['api_key'] ?? '');
         $api_secret = sanitize_text_field($_POST['api_secret'] ?? '');
@@ -368,8 +370,9 @@ class VMS_CoreManager
     /**
      * AJAX handler for refreshing SMS balance
      */
-    public function vms_ajax_refresh_balance() {
-        $this->verify_ajax_request();
+    public static function vms_ajax_refresh_balance() 
+    {
+        self::verify_ajax_request();
         
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
@@ -410,9 +413,9 @@ class VMS_CoreManager
     /**
      * NEW: Handle visit cancellation via AJAX
      */
-    public function handle_visit_cancellation(): void
+    public static function handle_visit_cancellation(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
         
         $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
         
@@ -485,7 +488,7 @@ class VMS_CoreManager
         );
 
         // Send email notification
-        $this->send_visit_cancellation_email($guest_data, $visit_data);
+        self::send_visit_cancellation_email($guest_data, $visit_data);
 
         wp_send_json_success(['messages' => ['Visit cancelled successfully']]);
     }
@@ -493,9 +496,9 @@ class VMS_CoreManager
     /**
      * NEW: Handle guest status update
      */
-    public function handle_guest_status_update(): void
+    public static function handle_guest_status_update(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
         
         $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
         $new_status = sanitize_text_field($_POST['guest_status'] ?? '');
@@ -553,7 +556,7 @@ class VMS_CoreManager
             $guest_data, $old_status, $new_status
         );
 
-        $this->send_guest_status_change_email($guest_data, $old_status, $new_status);
+        self::send_guest_status_change_email($guest_data, $old_status, $new_status);
 
         wp_send_json_success(['messages' => ['Guest status updated successfully']]);
     }
@@ -561,9 +564,9 @@ class VMS_CoreManager
     /**
      * Handle guest sign in via AJAX - UPDATED with notifications
      */
-    public function handle_sign_in_guest(): void
+    public static function handle_sign_in_guest(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
 
         $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
 
@@ -643,7 +646,7 @@ class VMS_CoreManager
 
         // Send SMS and email notifications
         VMS_NotificationManager::get_instance()->send_signin_notification($guest_data, $visit_data);
-        $this->send_signin_email_notification($guest_data, $visit_data);
+        self::send_signin_email_notification($guest_data, $visit_data);
 
         // Fetch host member name
         $host_member = get_user_by('id', $visit->host_member_id);
@@ -667,9 +670,9 @@ class VMS_CoreManager
     /**
      * Handle guest sign out via AJAX - UPDATED with notifications
      */
-    public function handle_sign_out_guest(): void
+    public static function handle_sign_out_guest(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
 
         $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
 
@@ -739,7 +742,7 @@ class VMS_CoreManager
 
         // Send SMS and email notifications
         VMS_NotificationManager::get_instance()->send_signout_notification($guest_data, $visit_data);
-        $this->send_signout_email_notification($guest_data, $visit_data);
+        self::send_signout_email_notification($guest_data, $visit_data);
 
         // Prepare response data
         $guest_data_response = [
@@ -1028,7 +1031,7 @@ class VMS_CoreManager
     /**
      * NEW: Send visit cancellation email notification
      */
-    private function send_visit_cancellation_email(array $guest_data, array $visit_data): void
+    private static function send_visit_cancellation_email(array $guest_data, array $visit_data): void
     {
         if ($guest_data['receive_emails'] !== 'yes') {
             return;
@@ -1059,7 +1062,7 @@ class VMS_CoreManager
     /**
      * NEW: Send guest status change email notification
      */
-    private function send_guest_status_change_email(array $guest_data, string $old_status, string $new_status): void
+    private static function send_guest_status_change_email(array $guest_data, string $old_status, string $new_status): void
     {
         if ($guest_data['receive_emails'] !== 'yes') {
             return;
@@ -1104,7 +1107,7 @@ class VMS_CoreManager
     /**
      * NEW: Send sign-in email notification
      */
-    private function send_signin_email_notification(array $guest_data, array $visit_data): void
+    private static function send_signin_email_notification(array $guest_data, array $visit_data): void
     {
         if ($guest_data['receive_emails'] !== 'yes') {
             return;
@@ -1127,7 +1130,7 @@ class VMS_CoreManager
     /**
      * NEW: Send sign-out email notification
      */
-    private function send_signout_email_notification(array $guest_data, array $visit_data): void
+    private static function send_signout_email_notification(array $guest_data, array $visit_data): void
     {
         if ($guest_data['receive_emails'] !== 'yes') {
             return;
@@ -1158,7 +1161,7 @@ class VMS_CoreManager
     /**
      * Calculate guest status based on guest_status and visit limits
      */
-    private function calculate_guest_status(int $guest_id, int $host_member_id, string $visit_date): string
+    private static function calculate_guest_status(int $guest_id, int $host_member_id, string $visit_date): string
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
@@ -1218,9 +1221,9 @@ class VMS_CoreManager
     /**
      * Handle guest registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
-    public function handle_guest_registration(): void
+    public static function handle_guest_registration(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
         error_log('Handle guest registration');
 
         global $wpdb;
@@ -1417,7 +1420,7 @@ class VMS_CoreManager
         ));
 
         // Send email notifications
-        $this->send_guest_registration_emails(
+        self::send_guest_registration_emails(
             $guest_id,
             $first_name,
             $last_name,
@@ -1429,7 +1432,7 @@ class VMS_CoreManager
         );
         
         // Send SMS notifications
-        $this->send_guest_registration_sms(
+        self::send_guest_registration_sms(
             $guest_id,
             $first_name,
             $last_name,
@@ -1468,9 +1471,9 @@ class VMS_CoreManager
     /**
      * Handle courtesy guest registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
-    public function handle_courtesy_guest_registration(): void
+    public static function handle_courtesy_guest_registration(): void
     {
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
         error_log('Handle courtesy guest registration');
 
         global $wpdb;
@@ -1599,7 +1602,7 @@ class VMS_CoreManager
         ));
 
         // Send email notifications for courtesy guest (no host)
-        $this->send_courtesy_guest_registration_emails(
+        self::send_courtesy_guest_registration_emails(
             $guest_id,
             $first_name,
             $last_name,
@@ -1610,7 +1613,7 @@ class VMS_CoreManager
         );
 
         // Send SMS notifications
-        $this->send_courtesy_guest_registration_sms(
+        self::send_courtesy_guest_registration_sms(
             $guest_id,
             $first_name,
             $last_name,
@@ -1649,7 +1652,7 @@ class VMS_CoreManager
     /**
      * Handle visit registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
      */
-    public function handle_visit_registration() 
+    public static function handle_visit_registration() 
     {
         global $wpdb;
 
@@ -1826,7 +1829,7 @@ class VMS_CoreManager
         if ($guest_info) {
             if ($courtesy === 'Courtesy') {
                 // Email
-                $this->send_courtesy_visit_registration_emails(
+                self::send_courtesy_visit_registration_emails(
                     $guest_info->first_name,
                     $guest_info->last_name,
                     $guest_info->email,
@@ -1836,7 +1839,7 @@ class VMS_CoreManager
                 );
 
                 // SMS
-                $this->send_courtesy_visit_registration_sms(
+                self::send_courtesy_visit_registration_sms(
                     $guest_id,
                     $guest_info->first_name,
                     $guest_info->last_name,
@@ -1848,7 +1851,7 @@ class VMS_CoreManager
 
             } else {
                 // Email
-                $this->send_visit_registration_emails(
+                self::send_visit_registration_emails(
                     $guest_info->first_name,
                     $guest_info->last_name,
                     $guest_info->email,
@@ -1859,7 +1862,7 @@ class VMS_CoreManager
                 );
 
                 // SMS
-                $this->send_visit_registration_sms(
+                self::send_visit_registration_sms(
                     $guest_id,
                     $guest_info->first_name,
                     $guest_info->last_name,
@@ -1908,7 +1911,7 @@ class VMS_CoreManager
     /**
      * Send SMS notifications for guest registration with host
      */
-    private function send_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status) 
+    private static function send_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status) 
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
@@ -1949,7 +1952,7 @@ class VMS_CoreManager
     /**
      * Send email notifications for guest registration with host
      */
-    private function send_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
+    private static function send_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
@@ -2017,7 +2020,7 @@ class VMS_CoreManager
     /**
      * Send SMS notifications for courtesy guest registration (no host involved)
      */
-    private function send_courtesy_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $visit_date, $status ): void 
+    private static function send_courtesy_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $visit_date, $status ): void 
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
@@ -2041,7 +2044,7 @@ class VMS_CoreManager
     /**
      * Send email notifications for courtesy guest registration (no host)
      */
-    private function send_courtesy_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
+    private static function send_courtesy_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
@@ -2092,7 +2095,7 @@ class VMS_CoreManager
         wp_mail($admin_email, $admin_subject, $admin_message);
     }
 
-    private function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
+    private static function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
     {
         if ($guest_receive_messages !== 'yes' || empty($guest_phone)) {
             return;
@@ -2124,7 +2127,7 @@ class VMS_CoreManager
     /**
      * Send email notifications for visit registration
      */
-    private function send_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
+    private static function send_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
@@ -2192,7 +2195,7 @@ class VMS_CoreManager
     /**
      * Send email notifications for courtesy visit registration (no host)
      */
-    private function send_courtesy_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
+    private static function send_courtesy_visit_registration_emails($guest_first_name, $guest_last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
     {
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
@@ -2287,10 +2290,10 @@ class VMS_CoreManager
     }
 
     // Handle guest update via AJAX
-    function handle_guest_update() 
+    public static function handle_guest_update() 
     {
         // Verify nonce
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
 
         error_log('Handle guest update');
 
@@ -2376,10 +2379,10 @@ class VMS_CoreManager
     }
 
     // Handle guest deletion via AJAX
-    function handle_guest_deletion() 
+    public static function handle_guest_deletion() 
     {
         // Verify nonce
-        $this->verify_ajax_request();
+        self::verify_ajax_request();
 
         $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
 
@@ -2675,7 +2678,7 @@ class VMS_CoreManager
     /**
      * Automatically sign out guests at midnight for the current day
      */
-    public function auto_sign_out_guests()
+    public static function auto_sign_out_guests()
     {
         global $wpdb;
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
@@ -2712,7 +2715,7 @@ class VMS_CoreManager
             );
 
             // Re-evaluate guest status
-            $guest_status = $this->calculate_guest_status(
+            $guest_status = self::calculate_guest_status(
                 $visit->guest_id,
                 $visit->host_member_id,
                 $visit->visit_date
@@ -2732,7 +2735,7 @@ class VMS_CoreManager
     /**
      * Reset monthly guest limits (only for automatically suspended guests)
      */
-    public function reset_monthly_limits()
+    public static function reset_monthly_limits()
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
@@ -2749,7 +2752,7 @@ class VMS_CoreManager
     /**
      * Reset yearly guest limits (only for automatically suspended guests)
      */
-    public function reset_yearly_limits()
+    public static function reset_yearly_limits()
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
@@ -2766,7 +2769,7 @@ class VMS_CoreManager
     /**
      * Verify AJAX request (placeholder, implement as needed)
      */
-    private function verify_ajax_request(): void
+    private static function verify_ajax_request(): void
     {
         // Verify nonce
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'vms_script_ajax_nonce')) {
