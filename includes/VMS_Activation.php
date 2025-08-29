@@ -248,7 +248,7 @@ class VMS_Activation
             recipient_role ENUM('guest','member','chairman','admin') NOT NULL DEFAULT 'guest',
             message TEXT NOT NULL,
             message_id VARCHAR(255) DEFAULT NULL,
-            status ENUM('sent','failed','queued','delivered','expired','undelivered') NOT NULL DEFAULT 'queued',
+            status VARCHAR(50) NOT NULL DEFAULT 'queued',
             cost DECIMAL(10,2) DEFAULT NULL,
             response_data TEXT DEFAULT NULL,
             error_message TEXT DEFAULT NULL,

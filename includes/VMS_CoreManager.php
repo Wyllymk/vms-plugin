@@ -1922,13 +1922,14 @@ class VMS_CoreManager
         // Send SMS to guest if opted in
         if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
             $guest_message = "Nyeri Club: Dear " . $first_name . ",\nYour visit on $formatted_date with host $host_first_name $host_last_name is $status_text.";
+            $role = 'guest';
             if ($status === 'approved') {
                 $guest_message .= " Please carry a valid ID.";
             } else {
                 $guest_message .= " You will be notified once approved.";
             }
 
-            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id, $role);
         }
 
         // Send SMS to host if opted in
@@ -1936,6 +1937,8 @@ class VMS_CoreManager
             $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
             $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
             $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
+            $roles                 = $host_member->roles ?? [];
+            $role                  = !empty($roles) ? $roles[0] : 'member';
 
             if ($host_receive_messages === 'yes' && !empty($host_phone)) {
                 $host_message = "Nyeri Club: Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
@@ -1945,7 +1948,7 @@ class VMS_CoreManager
                     $host_message .= " Pending approval due to limits.";
                 }
 
-                VMS_NotificationManager::send_sms($host_phone, $host_message, $host_member->ID);
+                VMS_NotificationManager::send_sms($host_phone, $host_message, $host_member->ID, $role);
             }
         }
     }
@@ -2028,6 +2031,7 @@ class VMS_CoreManager
 
         // Send SMS to courtesy guest if opted in
         if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
+            $role = 'guest';
             $guest_message  = "Nyeri Club: Dear {$first_name},\n";
             $guest_message .= "Your courtesy visit on {$formatted_date} is {$status_text}.";
 
@@ -2037,7 +2041,7 @@ class VMS_CoreManager
                 $guest_message .= " You will be notified once approved.";
             }
 
-            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+            VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id, $role);
         }
     }
 
@@ -2104,6 +2108,7 @@ class VMS_CoreManager
 
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+        $role           = 'guest';
 
         $guest_message  = "Nyeri Club: Dear {$first_name},\n";
         $guest_message .= "Your visit on {$formatted_date} is {$status_text}.";
@@ -2122,7 +2127,7 @@ class VMS_CoreManager
             $guest_message .= " You will be notified once approved.";
         }
 
-        VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id);
+        VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id, $role);
     }
 
     /**

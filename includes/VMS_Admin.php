@@ -649,7 +649,7 @@ class VMS_Admin
         color: #0a3622;
     }
 
-    .status-delivered {
+    .status-delivrd {
         background: #d1e7dd;
         color: #0a3622;
     }
@@ -841,8 +841,8 @@ class VMS_Admin
             $log['status_class'] = 'status-' . strtolower($log['status']);
             $log['cost_formatted'] = 'KES ' . number_format($log['cost'], 2);
             
-            // Get recipient name based on role
-            $log['recipient_name'] = $this->get_recipient_name($log['recipient_number'], $log['recipient_role']);
+            // Get recipient name based on role & user_id
+            $log['recipient_name'] = $this->get_recipient_name( (int)$log['user_id'], $log['recipient_role'], $log['recipient_number'] );
             
             // Get sender name if user_id exists
             if ($log['user_id']) {
@@ -859,41 +859,57 @@ class VMS_Admin
         ];
     }
 
+
     /**
-     * Get recipient name based on phone number and role
+     * Get recipient name based on user_id and role
      */
-    private function get_recipient_name(string $phone, string $role): string
+    private function get_recipient_name(?int $user_id, string $role, ?string $phone = null): string
     {
         global $wpdb;
-        
+
         if (in_array($role, ['member', 'chairman', 'admin'])) {
-            // Search in WordPress users
-            $user_query = new \WP_User_Query([
-                'meta_key' => 'phone_number',
-                'meta_value' => $phone,
-                'number' => 1
-            ]);
-            
-            if (!empty($user_query->results)) {
-                $user = $user_query->results[0];
-                return $user->first_name . ' ' . $user->last_name;
+            if ($user_id) {
+                $user = get_userdata($user_id);
+                if ($user) {
+                    $first_name = $user->first_name ?? '';
+                    $last_name  = $user->last_name ?? '';
+                    return trim($first_name . ' ' . $last_name) ?: $user->display_name;
+                }
             }
         } elseif ($role === 'guest') {
-            // Search in guests table
             $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-            $guest = $wpdb->get_row($wpdb->prepare(
-                "SELECT first_name, last_name FROM $guests_table WHERE phone_number = %s LIMIT 1",
-                $phone
-            ));
-            
-            if ($guest) {
-                return $guest->first_name . ' ' . $guest->last_name;
+
+            if ($user_id) {
+                // Look up by guest ID
+                $guest = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT first_name, last_name FROM $guests_table WHERE id = %d LIMIT 1",
+                        $user_id
+                    )
+                );
+            } elseif ($phone) {
+                // Fallback: look up by phone number
+                $guest = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT first_name, last_name FROM $guests_table WHERE phone_number = %s LIMIT 1",
+                        $phone
+                    )
+                );
+            }
+
+            if (!empty($guest)) {
+                return trim($guest->first_name . ' ' . $guest->last_name);
             }
         }
-        
-        // Fallback to phone number if name not found
-        return $phone;
+
+        // Fallbacks
+        if ($phone) {
+            return $phone;
+        }
+
+        return ucfirst($role);
     }
+
 
     /**
      * Delete SMS log
@@ -917,7 +933,7 @@ class VMS_Admin
     private function get_status_text(string $status): string
     {
         $statuses = [
-            'delivered' => 'Delivered',
+            'Delivrd' => 'Delivered',
             'sent' => 'Sent',
             'queued' => 'Queued',
             'pending' => 'Pending',

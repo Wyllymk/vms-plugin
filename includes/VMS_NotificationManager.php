@@ -67,7 +67,7 @@ class VMS_NotificationManager
     /**
      * Send SMS message - UPDATED to include callback URL automatically
      */
-    public static function send_sms(string $phone, string $message, ?int $user_id = null): ?array
+    public static function send_sms(string $phone, string $message, ?int $user_id = null, ?string $recipient_role = null): ?array
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
@@ -76,10 +76,7 @@ class VMS_NotificationManager
         // Always use our callback URL for status updates
         $callback_url = self::get_callback_url();
         $status_secret = get_option('vms_status_secret', '');
-        
-        // Determine recipient role
-        $recipient_role = self::determine_recipient_role($phone, $user_id);
-        
+                
         if (empty($api_key) || empty($api_secret)) {
             self::log_sms_message($user_id, $phone, $message, $recipient_role, null, 'failed', 0, null, 'API credentials not configured');
             return null;
@@ -147,64 +144,6 @@ class VMS_NotificationManager
                 'response_code' => $data['responseCode'] ?? 'UNKNOWN'
             ];
         }
-    }
-
-    /**
-     * Determine recipient role based on phone number and user ID
-     */
-    private static function determine_recipient_role(string $phone, ?int $user_id = null): string
-    {
-        global $wpdb;
-        
-        $clean_phone = self::clean_phone_number($phone);
-        
-        // First check if this is a WordPress user (member, chairman, admin)
-        if ($user_id) {
-            $user = get_user_by('ID', $user_id);
-            if ($user) {
-                $user_roles = $user->roles;
-                if (in_array('administrator', $user_roles)) {
-                    return 'admin';
-                } elseif (in_array('chairman', $user_roles)) {
-                    return 'chairman';
-                } elseif (in_array('member', $user_roles)) {
-                    return 'member';
-                }
-            }
-        }
-        
-        // Check if phone belongs to any WordPress user
-        $user_query = new \WP_User_Query([
-            'meta_key' => 'phone_number',
-            'meta_value' => $clean_phone,
-            'number' => 1
-        ]);
-        
-        if (!empty($user_query->results)) {
-            $user = $user_query->results[0];
-            $user_roles = $user->roles;
-            if (in_array('administrator', $user_roles)) {
-                return 'admin';
-            } elseif (in_array('chairman', $user_roles)) {
-                return 'chairman';
-            } elseif (in_array('member', $user_roles)) {
-                return 'member';
-            }
-        }
-        
-        // Check guests table
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $guests_table WHERE phone_number = %s LIMIT 1",
-            $clean_phone
-        ));
-        
-        if ($guest) {
-            return 'guest';
-        }
-        
-        // Default to guest if not found anywhere
-        return 'guest';
     }
 
     /**
@@ -383,14 +322,15 @@ class VMS_NotificationManager
             if ($received_secret !== $status_secret) {
                 http_response_code(403);
                 echo 'Unauthorized';
+                error_log('Unauthorized callback attempt');
                 exit;
             }
         }
 
         $message_id = $_POST['id'] ?? '';
-        $status = $_POST['status'] ?? '';
-        $reason = $_POST['reason'] ?? '';
-        $time = $_POST['time'] ?? '';
+        $status     = $_POST['status'] ?? '';
+        $reason     = $_POST['reason'] ?? '';
+        $time       = $_POST['time'] ?? '';
         
         if (!empty($message_id) && !empty($status)) {
             // Update SMS status in database
