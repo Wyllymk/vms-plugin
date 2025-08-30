@@ -50,6 +50,7 @@ class VMS_Admin
         add_action('admin_notices', [$this, 'show_admin_notices']);
         add_action('wp_ajax_refresh_sms_balance', [$this, 'ajax_refresh_balance']);
         add_action('wp_ajax_test_sms_connection', [$this, 'ajax_test_connection']);
+        add_action('wp_ajax_resend_sms', [$this, 'ajax_resend_sms']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
     }
 
@@ -251,7 +252,7 @@ class VMS_Admin
         $api_secret = get_option('vms_sms_api_secret', '');
         
         if (empty($api_key) || empty($api_secret)) {
-            $this->show_error_notice(__('Please configure your SMS Leopard API credentials to use SMS functionality.', 'vms'));
+            $this->show_error_notice(__('Please configure SMS Leopard API credentials to use SMS functionality.', 'vms'));
         }
     }
 
@@ -282,7 +283,7 @@ class VMS_Admin
             wp_die(__('Insufficient permissions.', 'vms'));
         }
 
-        // Here you would integrate with your SMS service to get balance
+        // Here you would integrate with SMS service to get balance
         // For now, return mock data
         $balance = VMS_NotificationManager::refresh_sms_balance();
         
@@ -313,6 +314,68 @@ class VMS_Admin
         } else {
             wp_send_json_error($result);
         }
+    }
+
+    /**
+     * AJAX handler for resending SMS
+     */
+    public function ajax_resend_sms(): void
+    {
+        check_ajax_referer('resend_sms_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Insufficient permissions.', 'vms'));
+        }
+
+        $log_id = isset($_POST['log_id']) ? (int)$_POST['log_id'] : 0;
+        
+        if (!$log_id) {
+            wp_send_json_error(__('Invalid SMS log ID.', 'vms'));
+        }
+
+        // Get the original SMS data
+        $sms_data = $this->get_sms_log_data($log_id);
+        
+        if (!$sms_data) {
+            wp_send_json_error(__('SMS log not found.', 'vms'));
+        }
+
+        // Resend the SMS using VMS_NotificationManager
+        $result = VMS_NotificationManager::send_sms(
+            $sms_data['recipient_number'],
+            $sms_data['message'],
+            $sms_data['user_id'],
+            $sms_data['recipient_role']
+        );
+
+        if (is_array($result) && isset($result['success']) && $result['success'] === true) {
+            wp_send_json_success(__('SMS resent successfully.', 'vms'));
+        } else {
+            $error_message = is_array($result) && isset($result['response'])
+                ? $result['response']
+                : (is_string($result) ? $result : __('Failed to resend SMS.', 'vms'));
+
+            wp_send_json_error($error_message);
+        }
+    }
+
+    /**
+     * Get SMS log data by ID
+     */
+    private function get_sms_log_data(int $log_id): ?array
+    {
+        global $wpdb;
+        
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        $log = $wpdb->get_row($wpdb->prepare(
+            "SELECT user_id, recipient_number, recipient_role, message 
+             FROM {$table_name} 
+             WHERE id = %d LIMIT 1",
+            $log_id
+        ), ARRAY_A);
+        
+        return $log ?: null;
     }
 
     /**
@@ -531,15 +594,25 @@ class VMS_Admin
                     </span>
                 </td>
                 <td class="column-actions">
-                    <form method="post" style="display:inline;"
-                        onsubmit="return confirm('<?php esc_attr_e('Are you sure you want to delete this SMS log?', 'vms'); ?>');">
-                        <?php wp_nonce_field('delete_sms_log'); ?>
-                        <input type="hidden" name="log_id" value="<?php echo esc_attr($log['id']); ?>">
-                        <button type="submit" name="delete_log" class="button-link delete-button"
-                            title="<?php esc_attr_e('Delete Log', 'vms'); ?>">
-                            <span class="dashicons dashicons-trash"></span>
+                    <div class="action-buttons">
+                        <!-- Resend Button -->
+                        <button type="button" class="button-link resend-button"
+                            data-log-id="<?php echo esc_attr($log['id']); ?>"
+                            title="<?php esc_attr_e('Resend SMS', 'vms'); ?>">
+                            <span class="dashicons dashicons-update"></span>
                         </button>
-                    </form>
+
+                        <!-- Delete Button -->
+                        <form method="post" style="display:inline;" class="delete-form"
+                            onsubmit="return confirm('<?php esc_attr_e('Are you sure you want to delete this SMS log?', 'vms'); ?>');">
+                            <?php wp_nonce_field('delete_sms_log'); ?>
+                            <input type="hidden" name="log_id" value="<?php echo esc_attr($log['id']); ?>">
+                            <button type="submit" name="delete_log" class="button-link delete-button"
+                                title="<?php esc_attr_e('Delete Log', 'vms'); ?>">
+                                <span class="dashicons dashicons-trash"></span>
+                            </button>
+                        </form>
+                    </div>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -631,8 +704,15 @@ class VMS_Admin
     }
 
     .column-actions {
-        width: 60px;
+        width: 80px;
         text-align: center;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 5px;
+        justify-content: center;
+        align-items: center;
     }
 
     .status-badge {
@@ -728,6 +808,23 @@ class VMS_Admin
         font-size: 11px;
     }
 
+    .resend-button {
+        color: #0073aa;
+        border: none;
+        background: none;
+        cursor: pointer;
+        padding: 5px;
+    }
+
+    .resend-button:hover {
+        color: #005a87;
+    }
+
+    .resend-button:disabled {
+        color: #ccc;
+        cursor: not-allowed;
+    }
+
     .delete-button {
         color: #dc3232;
         border: none;
@@ -776,6 +873,73 @@ class VMS_Admin
     </style>
 
     <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        // Handle resend button clicks
+        $('.resend-button').on('click', function() {
+            var button = $(this);
+            var logId = button.data('log-id');
+            var originalHtml = button.html();
+
+            if (button.prop('disabled')) {
+                return;
+            }
+
+            if (!confirm('Are you sure you want to resend this SMS?')) {
+                return;
+            }
+
+            // Disable button and show loading state
+            button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span>');
+
+            $.post(ajaxurl, {
+                action: 'resend_sms',
+                log_id: logId,
+                nonce: '<?php echo wp_create_nonce('resend_sms_nonce'); ?>'
+            }, function(response) {
+                if (response.success) {
+                    console.log('Resend SMS response:', response);
+                    // Show success message
+                    var successMessage = $(
+                        '<div class="notice notice-success is-dismissible inline-notice"><p>' +
+                        response.data + '</p></div>');
+                    button.closest('tr').after('<tr class="success-row"><td colspan="9">' +
+                        successMessage.prop('outerHTML') + '</td></tr>');
+
+                    // Remove success message after 3 seconds
+                    setTimeout(function() {
+                        $('.success-row').fadeOut(function() {
+                            $(this).remove();
+                        });
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    console.log('Resend SMS error response:', response);
+                    // Show error message
+                    var errorMessage = response.data ||
+                        'Failed to resend SMS.';
+                    var errorNotice = $(
+                        '<div class="notice notice-error is-dismissible inline-notice"><p>' +
+                        errorMessage + '</p></div>');
+                    button.closest('tr').after('<tr class="error-row"><td colspan="9">' +
+                        errorNotice.prop('outerHTML') + '</td></tr>');
+
+                    // Remove error message after 5 seconds
+                    setTimeout(function() {
+                        $('.error-row').fadeOut(function() {
+                            $(this).remove();
+                        });
+                        window.location.reload();
+                    }, 5000);
+                }
+            }).fail(function() {
+                alert('Network error occurred. Please try again.');
+            }).always(function() {
+                // Re-enable button and restore original state
+                button.prop('disabled', false).html(originalHtml);
+            });
+        });
+    });
+
     function toggleMessage(element) {
         var messageDiv = element.closest('.message-preview');
         var messageText = messageDiv.querySelector('.message-text');
@@ -950,7 +1114,7 @@ class VMS_Admin
      */
     public function render_sms_section_description(): void
     {
-        echo '<p>' . esc_html__('Configure your SMS Leopard API settings to enable SMS notifications.', 'vms') . '</p>';
+        echo '<p>' . esc_html__('Configure SMS Leopard API settings to enable SMS notifications.', 'vms') . '</p>';
     }
 
     /**
@@ -963,7 +1127,7 @@ class VMS_Admin
 <input type="text" name="vms_sms_api_key" id="vms_sms_api_key" value="<?php echo esc_attr($value); ?>"
     class="regular-text" required>
 <p class="description">
-    <?php esc_html_e('Enter your SMS Leopard API key.', 'vms'); ?>
+    <?php esc_html_e('Enter SMS Leopard API key.', 'vms'); ?>
 </p>
 <?php
     }
@@ -978,7 +1142,7 @@ class VMS_Admin
 <input type="password" name="vms_sms_api_secret" id="vms_sms_api_secret" value="<?php echo esc_attr($value); ?>"
     class="regular-text" required>
 <p class="description">
-    <?php esc_html_e('Enter your SMS Leopard API secret.', 'vms'); ?>
+    <?php esc_html_e('Enter SMS Leopard API secret.', 'vms'); ?>
 </p>
 <?php
     }
@@ -993,7 +1157,7 @@ class VMS_Admin
 <input type="text" name="vms_sms_sender_id" id="vms_sms_sender_id" value="<?php echo esc_attr($value); ?>"
     class="regular-text">
 <p class="description">
-    <?php esc_html_e('Your SMS sender ID. Use "SMS_TEST" for testing.', 'vms'); ?>
+    <?php esc_html_e('SMS sender ID. Use "SMS_TEST" for testing.', 'vms'); ?>
 </p>
 <?php
     }
