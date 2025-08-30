@@ -1911,7 +1911,7 @@ class VMS_CoreManager
      */
     private static function send_employee_welcome_email($email, $first_name, $last_name, $user_login, $password): void
     {
-        $login_url = wp_login_url();
+        $login_url = home_url('/login');
         $site_name = get_bloginfo('name');
         
         $subject = "Welcome to {$site_name} - Your Employee Account";
@@ -1942,7 +1942,7 @@ class VMS_CoreManager
     private static function send_employee_welcome_sms($phone_number, $first_name, $user_login, $password, $user_id): void
     {
         $site_name = get_bloginfo('name');
-        $login_url = wp_login_url();
+        $login_url = home_url('/login');;
         
         // SMS message needs to be concise due to character limits
         $sms_message = "{$site_name}: Hello {$first_name}, ";
