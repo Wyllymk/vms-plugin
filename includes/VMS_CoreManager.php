@@ -75,6 +75,9 @@ class VMS_CoreManager
         add_action( 'wp_ajax_vms_ajax_save_settings', [self::class, 'vms_ajax_save_settings'] );
         add_action('wp_ajax_vms_ajax_refresh_balance', [self::class, 'vms_ajax_refresh_balance']);
 
+        add_action('wp_ajax_change_user_password', [self::class, 'handle_change_user_password'] );
+
+        add_action('wp_ajax_employee_registration', [self::class, 'handle_employee_registration']);
         add_action('wp_ajax_guest_registration', [self::class, 'handle_guest_registration']);
         add_action('wp_ajax_courtesy_guest_registration', [self::class, 'handle_courtesy_guest_registration']);
         add_action('wp_ajax_update_guest', [self::class, 'handle_guest_update']);
@@ -265,6 +268,258 @@ class VMS_CoreManager
         if (!current_user_can('administrator') && !is_admin()) {
             show_admin_bar(false);
         }
+    }
+
+    /**
+     * Handle password change via AJAX
+     */
+    public static function handle_change_user_password() 
+    {
+        try {
+            // Verify nonce for security
+            if (!wp_verify_nonce($_POST['nonce'], 'vms_script_ajax_nonce')) {
+                wp_send_json_error(array(
+                    'message' => 'Security check failed. Please refresh the page and try again.'
+                ));
+                return;
+            }
+
+            // Check if user is logged in
+            if (!is_user_logged_in()) {
+                wp_send_json_error(array(
+                    'message' => 'You must be logged in to change your password.'
+                ));
+                return;
+            }
+
+            // Get current user
+            $current_user = wp_get_current_user();
+            $user_id = $current_user->ID;
+
+            // Sanitize input data
+            $current_password = sanitize_text_field($_POST['current_password']);
+            $new_password = sanitize_text_field($_POST['new_password']);
+            $confirm_password = sanitize_text_field($_POST['confirm_password']);
+
+            // Validate input
+            $validation_result = self::validate_password_change_data($current_password, $new_password, $confirm_password, $current_user);
+            
+            if (is_wp_error($validation_result)) {
+                wp_send_json_error(array(
+                    'message' => $validation_result->get_error_message()
+                ));
+                return;
+            }
+
+            // Change the password
+            $change_result = self::change_user_password($user_id, $new_password);
+            
+            if (is_wp_error($change_result)) {
+                wp_send_json_error(array(
+                    'message' => $change_result->get_error_message()
+                ));
+                return;
+            }
+
+            // Log the password change
+            error_log(sprintf('Password changed for user ID: %d, Email: %s', $user_id, $current_user->user_email));
+
+            // Send success response
+            wp_send_json_success(array(
+                'message' => 'Your password has been changed successfully.'
+            ));
+
+        } catch (Exception $e) {
+            error_log('Password change error: ' . $e->getMessage());
+            wp_send_json_error(array(
+                'message' => 'An unexpected error occurred. Please try again.'
+            ));
+        }
+    }
+
+    /**
+     * Validate password change data
+     */
+    private static function validate_password_change_data($current_password, $new_password, $confirm_password, $user) 
+    {
+        // Check if all fields are provided
+        if (empty($current_password) || empty($new_password) || empty($confirm_password)) {
+            return new WP_Error('missing_fields', 'All password fields are required.');
+        }
+
+        // Verify current password
+        if (!wp_check_password($current_password, $user->user_pass, $user->ID)) {
+            return new WP_Error('incorrect_password', 'Current password is incorrect.');
+        }
+
+        // Check if new passwords match
+        if ($new_password !== $confirm_password) {
+            return new WP_Error('password_mismatch', 'New passwords do not match.');
+        }
+
+        // Check password length
+        if (strlen($new_password) < 8) {
+            return new WP_Error('password_too_short', 'Password must be at least 8 characters long.');
+        }
+
+        // Check password strength
+        $strength_check = self::check_password_strength($new_password);
+        if (is_wp_error($strength_check)) {
+            return $strength_check;
+        }
+
+        // Check if new password is different from current
+        if (wp_check_password($new_password, $user->user_pass, $user->ID)) {
+            return new WP_Error('same_password', 'New password must be different from your current password.');
+        }
+
+        return true;
+    }
+
+    /**
+     * Check password strength
+     */
+    private static function check_password_strength($password) 
+    {
+        $errors = array();
+
+        // Check for uppercase letter
+        if (!preg_match('/[A-Z]/', $password)) {
+            $errors[] = 'at least one uppercase letter';
+        }
+
+        // Check for lowercase letter
+        if (!preg_match('/[a-z]/', $password)) {
+            $errors[] = 'at least one lowercase letter';
+        }
+
+        // Check for number
+        if (!preg_match('/\d/', $password)) {
+            $errors[] = 'at least one number';
+        }
+
+        // Check for special character
+        if (!preg_match('/[!@#$%^&*(),.?":{}|<>]/', $password)) {
+            $errors[] = 'at least one special character (!@#$%^&*(),.?":{}|<>)';
+        }
+
+        // Check for common weak passwords
+        $weak_passwords = array('password', '123456', 'qwerty', 'abc123', 'password123');
+        if (in_array(strtolower($password), $weak_passwords)) {
+            return new WP_Error('weak_password', 'This password is too common. Please choose a stronger password.');
+        }
+
+        if (!empty($errors)) {
+            $message = 'Password must contain: ' . implode(', ', $errors) . '.';
+            return new WP_Error('password_requirements', $message);
+        }
+
+        return true;
+    }
+
+    /**
+     * Change user password safely
+     */
+    private static function change_user_password($user_id, $new_password) 
+    {
+        try {
+            // Update user password
+            $update_result = wp_update_user(array(
+                'ID' => $user_id,
+                'user_pass' => $new_password
+            ));
+
+            if (is_wp_error($update_result)) {
+                return new WP_Error('update_failed', 'Failed to update password in database.');
+            }
+
+            // Clear user cache
+            clean_user_cache($user_id);
+
+            // Update user meta to track password change
+            update_user_meta($user_id, 'last_password_change', current_time('mysql'));
+
+            // Send email notification (optional)
+            self::send_password_change_notification($user_id);
+
+            return true;
+
+        } catch (Exception $e) {
+            error_log('Password update error: ' . $e->getMessage());
+            return new WP_Error('update_error', 'An error occurred while updating your password.');
+        }
+    }
+
+    /**
+     * Send password change notification email (optional)
+     */
+    private static function send_password_change_notification($user_id) 
+    {
+        $user = get_userdata($user_id);
+        
+        if (!$user) {
+            return false;
+        }
+
+        $subject = sprintf('[%s] Password Changed', get_bloginfo('name'));
+        $message = sprintf(
+            "Hello %s,\n\nYour password for %s has been successfully changed.\n\nIf you did not make this change, please contact us immediately.\n\nTime: %s\nIP Address: %s\n\nBest regards,\n%s Team",
+            $user->display_name,
+            get_bloginfo('name'),
+            current_time('mysql'),
+            $_SERVER['REMOTE_ADDR'],
+            get_bloginfo('name')
+        );
+
+        wp_mail($user->user_email, $subject, $message);
+    }
+    
+    /**
+     * Send SMS notification to user on password change
+     *
+     * @param int $user_id User ID
+     */
+    private static function send_password_change_sms($user_id)
+    {
+        $user = get_userdata($user_id);
+        
+        if (!$user) {
+            return false;
+        }
+        
+        // Check if user has phone number and SMS enabled
+        $phone = get_user_meta($user_id, 'phone_number', true);
+        $receive_sms = get_user_meta($user_id, 'receive_sms', true);
+        
+        if (empty($phone) || $receive_sms !== 'yes') {
+            return false;
+        }
+        
+        // Debug log
+        error_log("SMS Triggered: Password changed for user ID {$user_id}");
+        
+        // Get user role
+        $user_roles = $user->roles;
+        $role = !empty($user_roles) ? $user_roles[0] : 'subscriber';
+        
+        // Build message
+        $site_name = get_bloginfo('name');
+        $user_name = $user->display_name ?: $user->user_login;
+        $current_time = current_time('Y-m-d H:i:s');
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+        
+        $message = sprintf(
+            "%s: Dear %s, your password was changed successfully at %s from IP %s. Contact us if you did not make this change.",
+            $site_name,
+            $user_name,
+            $current_time,
+            $ip_address
+        );
+        
+        // Send SMS through notification manager
+        VMS_NotificationManager::send_sms($phone, $message, $user_id, $role);
+        
+        return true;
     }
 
     /**
@@ -1527,6 +1782,227 @@ class VMS_CoreManager
             'messages'  => ['Guest registered successfully'],
             'guestData' => $guest_data
         ]);
+    }
+
+    /**
+     * Handle employee registration via AJAX - UPDATED WITH EMAIL & SMS NOTIFICATIONS
+     */
+    public static function handle_employee_registration(): void
+    {
+        self::verify_ajax_request();
+        
+        $errors = [];
+
+        // Sanitize and validate input
+        $first_name = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name = sanitize_text_field($_POST['last_name'] ?? '');
+        $email = sanitize_email($_POST['email'] ?? '');
+        $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
+        $user_role = sanitize_text_field($_POST['user_role'] ?? '');
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
+
+        // Validate required fields
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($user_role)) $errors[] = 'User role is required';
+
+        // Check if email already exists
+        if (email_exists($email)) {
+            $errors[] = 'Email address already exists';
+        }
+
+        // If there are errors, return them
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+            return;
+        }
+
+        // Generate user_login as firstname.lastname in lowercase
+        $user_login = strtolower($first_name . '.' . $last_name);
+        $user_login = sanitize_user($user_login, true);
+
+        // Ensure username is unique
+        $original_login = $user_login;
+        $counter = 1;
+        while (username_exists($user_login)) {
+            $user_login = $original_login . $counter;
+            $counter++;
+        }
+
+        // Generate a strong password
+        $password = wp_generate_password(12, true, true);
+
+        // Prepare user data
+        $user_data = [
+            'user_login' => $user_login,
+            'user_email' => $email,
+            'user_pass' => $password,
+            'role' => $user_role,
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'meta_input' => [
+                'phone_number' => $phone_number,
+                'registration_status' => 'active',
+                'receive_emails' => $receive_emails,
+                'receive_messages' => $receive_messages,
+                'show_admin_bar_front' => 'false'
+            ]
+        ];
+
+        // Create the user
+        $user_id = wp_insert_user(wp_slash($user_data));
+
+        if (is_wp_error($user_id)) {
+            $error_code = array_key_first($user_id->errors);
+            $error_message = $user_id->errors[$error_code][0];
+            wp_send_json_error(['messages' => [$error_message]]);
+            return;
+        }
+
+        // Send email notification to the new employee
+        self::send_employee_welcome_email(
+            $email,
+            $first_name,
+            $last_name,
+            $user_login,
+            $password
+        );
+
+        // Send SMS notification to the new employee
+        self::send_employee_welcome_sms(
+            $phone_number,
+            $first_name,
+            $user_login,
+            $password,
+            $user_id
+        );
+
+        // Send notification to admin
+        self::send_admin_employee_notification(
+            $first_name,
+            $last_name,
+            $email,
+            $user_role
+        );
+
+        // Prepare employee data for response
+        $employee_data = [
+            'id' => $user_id,
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => $email,
+            'phone_number' => $phone_number,
+            'user_role' => $user_role,
+            'user_login' => $user_login,
+            'registration_status' => 'active'
+        ];
+
+        wp_send_json_success([
+            'messages' => ['Employee registered successfully'],
+            'employeeData' => $employee_data
+        ]);
+    }
+
+    /**
+     * Send welcome email to new employee
+     */
+    private static function send_employee_welcome_email($email, $first_name, $last_name, $user_login, $password): void
+    {
+        $login_url = wp_login_url();
+        $site_name = get_bloginfo('name');
+        
+        $subject = "Welcome to {$site_name} - Your Employee Account";
+        
+        $message = "Dear {$first_name} {$last_name},\n\n";
+        $message .= "Welcome to {$site_name}! Your employee account has been created successfully.\n\n";
+        $message .= "Your login credentials are:\n";
+        $message .= "Username: {$user_login}\n";
+        $message .= "Password: {$password}\n\n";
+        $message .= "Login URL: {$login_url}\n\n";
+        $message .= "Important Security Notes:\n";
+        $message .= "- Please keep these credentials secure and confidential\n";
+        $message .= "- We recommend changing your password after your first login\n";
+        $message .= "- Never share your login credentials with anyone\n\n";
+        $message .= "If you have any questions or need assistance, please contact the administrator.\n\n";
+        $message .= "Best regards,\n";
+        $message .= "{$site_name} Management Team";
+
+        error_log("Sending welcome email to: {$email}");
+        error_log("Email content: {$message}");
+
+        wp_mail($email, $subject, $message);
+    }
+
+    /**
+     * Send welcome SMS to new employee
+     */
+    private static function send_employee_welcome_sms($phone_number, $first_name, $user_login, $password, $user_id): void
+    {
+        $site_name = get_bloginfo('name');
+        $login_url = wp_login_url();
+        
+        // SMS message needs to be concise due to character limits
+        $sms_message = "{$site_name}: Hello {$first_name}, ";
+        $sms_message .= "your employee account is ready. ";
+        $sms_message .= "Username: {$user_login}, ";
+        $sms_message .= "Password: {$password}. ";
+        $sms_message .= "Login: {$login_url}. ";
+        $sms_message .= "Change password after first login.";
+
+        error_log("Sending SMS to: {$phone_number}");
+        error_log("SMS content: {$sms_message}");
+
+        // Use your notification manager to send SMS
+        if (class_exists('VMS_NotificationManager')) {
+            VMS_NotificationManager::send_sms(
+                $phone_number, 
+                $sms_message, 
+                $user_id, 
+                'employee'
+            );
+        } else {
+            error_log("VMS_NotificationManager class not found - SMS not sent");
+        }
+    }
+
+    /**
+     * Send notification to admin about new employee registration
+     */
+    private static function send_admin_employee_notification($first_name, $last_name, $email, $user_role): void
+    {
+        $admin_email = get_option('admin_email');
+        $site_name = get_bloginfo('name');
+        
+        // Convert role key to readable format
+        $role_names = [
+            'general_manager' => 'General Manager',
+            'gate' => 'Gate Officer',
+            'reception' => 'Reception Staff'
+        ];
+        $readable_role = isset($role_names[$user_role]) ? $role_names[$user_role] : ucwords(str_replace('_', ' ', $user_role));
+        
+        $subject = "New Employee Account Created - {$site_name}";
+        
+        $message = "Hello Administrator,\n\n";
+        $message .= "A new employee account has been successfully created in the system.\n\n";
+        $message .= "Employee Details:\n";
+        $message .= "Name: {$first_name} {$last_name}\n";
+        $message .= "Email: {$email}\n";
+        $message .= "Role: {$readable_role}\n";
+        $message .= "Status: Active\n";
+        $message .= "Registration Date: " . date('F j, Y \a\t g:i A') . "\n\n";
+        $message .= "The employee has been automatically sent their login credentials via both email and SMS.\n\n";
+        $message .= "You can manage this employee account through the admin dashboard.\n\n";
+        $message .= "Best regards,\n";
+        $message .= "{$site_name} Visitor Management System";
+
+        error_log("Sending admin notification to: {$admin_email}");
+        error_log("Admin notification content: {$message}");
+
+        wp_mail($admin_email, $subject, $message);
     }
 
     /**

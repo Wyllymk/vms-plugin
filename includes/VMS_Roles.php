@@ -29,84 +29,30 @@ class VMS_Roles
             'name' => 'Reception',
             'capabilities' => [
                 'read' => true,
-                'create_cases' => true,
-                'edit_cases' => true,
-                'edit_others_cases' => true,
-                'publish_cases' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
-                'delete_case' => true,
-                'create_tasks' => true,
-                'edit_tasks' => true,
-                'edit_others_tasks' => true,
-                'publish_tasks' => true,
-                'read_task' => true,
-                'read_private_tasks' => true,
-                'delete_task' => true,
-                'upload_files' => true,
             ]
         ],
         'chairman' => [
             'name' => 'Chairman',
             'capabilities' => [
                 'read' => true,
-                'create_cases' => true,
-                'edit_cases' => true,
-                'edit_others_cases' => true,
-                'publish_cases' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
-                'delete_case' => true,
-                'create_tasks' => true,
-                'edit_tasks' => true,
-                'edit_others_tasks' => true,
-                'publish_tasks' => true,
-                'read_task' => true,
-                'read_private_tasks' => true,
-                'delete_task' => true,
-                'upload_files' => true,
             ]
         ],
         'general_manager' => [
             'name' => 'General Manager',
             'capabilities' => [
                 'read' => true,
-                'create_cases' => true,
-                'edit_cases' => true,
-                'publish_cases' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
-                'delete_case' => true,
-                'create_tasks' => true,
-                'edit_tasks' => true,
-                'publish_tasks' => true,
-                'read_task' => true,
-                'read_private_tasks' => true,
-                'delete_task' => true,
-                'upload_files' => true,
             ]
         ],
         'member' => [
             'name' => 'Member',
             'capabilities' => [
-                'read' => true,
-                'edit_cases' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
-                'create_tasks' => true,
-                'edit_tasks' => true,
-                'publish_tasks' => true,
-                'read_task' => true,
-                'read_private_tasks' => true,
-                'upload_files' => true,
+                'read' => true                
             ]
         ],       
         'gate' => [
             'name' => 'Gate',
             'capabilities' => [
-                'read' => true,
-                'read_case' => true,
-                'read_private_cases' => true,
+                'read' => true,               
             ]
         ],
         'guest' => [

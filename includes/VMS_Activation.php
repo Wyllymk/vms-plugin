@@ -53,6 +53,7 @@ class VMS_Activation
             ['title' => 'Dashboard', 'template' => 'page-templates/page-dashboard.php'],
             ['title' => 'Members', 'template' => 'page-templates/page-members.php'],
             ['title' => 'Employees', 'template' => 'page-templates/page-employees.php'],
+            ['title' => 'Employee Details', 'template' => 'page-templates/page-employee-details.php'],
             ['title' => 'Details', 'template' => 'page-templates/page-details.php'],
             ['title' => 'Guests', 'template' => 'page-templates/page-guests.php'],
             ['title' => 'Guest Details', 'template' => 'page-templates/page-guest-details.php'],
@@ -232,9 +233,40 @@ class VMS_Activation
         dbDelta($sql);
     }
 
+
     /**
-     * Create SMS logs table
-     */
+    * Create SMS logs table
+    */
+    private static function create_sms_logs_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+        
+        $sql = "CREATE TABLE $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT(20) UNSIGNED DEFAULT NULL,
+            recipient_number VARCHAR(20) NOT NULL,
+            message TEXT NOT NULL,
+            message_id VARCHAR(255) DEFAULT NULL,
+            status ENUM('sent','failed','queued','delivered','expired','undelivered') NOT NULL DEFAULT 'queued',
+            cost DECIMAL(10,2) DEFAULT NULL,
+            response_data TEXT DEFAULT NULL,
+            error_message TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY recipient_number (recipient_number),
+            KEY message_id (message_id),
+            KEY status (status),
+            KEY created_at (created_at)
+        ) ENGINE=InnoDB $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
     public static function handle_sms_delivery_callback(): void
     {
         // Log all incoming data for debugging
@@ -387,7 +419,7 @@ class VMS_Activation
         $pages = [
             'login', 'register', 'lost-password', 'password-reset',
             'terms-conditions', 'profile', 'dashboard', 'employees',
-            'details', 'members', 'member-details',
+            'details', 'members', 'employee-details',
             'guests', 'guest-details', 'settings'
         ];
 
