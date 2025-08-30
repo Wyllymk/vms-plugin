@@ -1292,31 +1292,89 @@ class VMS_CoreManager
      */
     private static function send_visit_cancellation_email(array $guest_data, array $visit_data): void
     {
-        if ($guest_data['receive_emails'] !== 'yes') {
-            return;
+        global $wpdb;
+        $table_name = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Always verify against the database value to avoid stale $guest_data
+        $receive_emails = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT receive_emails FROM $table_name WHERE id = %d",
+                $guest_data['id'] ?? 0
+            )
+        );
+
+        if ($receive_emails !== 'yes') {
+            return; // Do not send if guest opted out
         }
 
         $formatted_date = date('F j, Y', strtotime($visit_data['visit_date']));
-        
+
         $subject = 'Visit Cancellation - Nyeri Club';
         $message = "Dear {$guest_data['first_name']},\n\n";
         $message .= "Your visit to Nyeri Club scheduled for {$formatted_date} has been cancelled.\n\n";
-        
-        if ($visit_data['host_member_id']) {
+
+        if (!empty($visit_data['host_member_id'])) {
             $host = get_userdata($visit_data['host_member_id']);
             if ($host) {
-                $host_name = get_user_meta($visit_data['host_member_id'], 'first_name', true) . ' ' . 
-                           get_user_meta($visit_data['host_member_id'], 'last_name', true);
+                $host_name = get_user_meta($visit_data['host_member_id'], 'first_name', true) . ' ' .
+                        get_user_meta($visit_data['host_member_id'], 'last_name', true);
                 $message .= "Host: " . trim($host_name) . "\n\n";
             }
         }
-        
+
         $message .= "If you have any questions, please contact your host or reception.\n\n";
         $message .= "Best regards,\n";
         $message .= "Nyeri Club Visitor Management System";
 
         wp_mail($guest_data['email'], $subject, $message);
     }
+
+        /**
+     * Send SMS notification to guest on visit cancellation
+     *
+     * @param array $guest_data Guest info (must include: id, first_name, phone_number, receive_messages)
+     * @param array $visit_data Visit info (must include: visit_date, host_member_id)
+     */
+    private static function send_visit_cancellation_sms(array $guest_data, array $visit_data): void
+    {
+        // Ensure phone number exists and guest has opted in for SMS
+        if (empty($guest_data['phone_number']) || ($guest_data['receive_messages'] ?? 'no') !== 'yes') {
+            return;
+        }
+
+        $guest_id   = $guest_data['id'] ?? 0;
+        $first_name = $guest_data['first_name'] ?? 'Guest';
+        $phone      = $guest_data['phone_number'];
+        $role       = 'guest';
+
+        // Format visit date
+        $formatted_date = !empty($visit_data['visit_date'])
+            ? date('F j, Y', strtotime($visit_data['visit_date']))
+            : 'the scheduled date';
+
+        // Start message
+        $message = "Nyeri Club: Dear {$first_name}, your visit scheduled for {$formatted_date} has been cancelled.";
+
+        // Add host info if available
+        if (!empty($visit_data['host_member_id'])) {
+            $host_first = get_user_meta($visit_data['host_member_id'], 'first_name', true);
+            $host_last  = get_user_meta($visit_data['host_member_id'], 'last_name', true);
+            $host_name  = trim($host_first . ' ' . $host_last);
+
+            if (!empty($host_name)) {
+                $message .= " Host: {$host_name}.";
+            }
+        }
+
+        $message .= " For inquiries, please contact your host or reception.";
+
+        // Debug log
+        error_log("SMS Triggered: Visit cancellation for guest ID {$guest_id}, Phone: {$phone}");
+
+        // Send SMS through notification manager (handles logging + DB insert)
+        VMS_NotificationManager::send_sms($phone, $message, $guest_id, $role);
+    }
+
 
     /**
      * NEW: Send guest status change email notification
