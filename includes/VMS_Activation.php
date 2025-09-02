@@ -57,6 +57,9 @@ class VMS_Activation
             ['title' => 'Details', 'template' => 'page-templates/page-details.php'],
             ['title' => 'Guests', 'template' => 'page-templates/page-guests.php'],
             ['title' => 'Guest Details', 'template' => 'page-templates/page-guest-details.php'],
+            ['title' => 'Reciprocating Members', 'template' => 'page-templates/page-reciprocating-members.php'],
+            ['title' => 'Reciprocating Member Details', 'template' => 'page-templates/page-reciprocating-member-details.php'],
+            ['title' => 'Clubs', 'template' => 'page-templates/page-clubs.php'],
             ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']
         ];
 
@@ -93,9 +96,10 @@ class VMS_Activation
     private static function create_database_tables(): void
     {
         self::create_guests_table();
-        self::create_reciprocating_members_table();
-        self::create_reciprocating_clubs_table();
         self::create_guest_visits_table();
+        self::create_reciprocating_members_table();
+        self::create_reciprocating_members_visits_table();
+        self::create_reciprocating_clubs_table();        
         self::create_sms_logs_table();
     }
 
@@ -186,6 +190,7 @@ class VMS_Activation
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
 
         $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -199,40 +204,114 @@ class VMS_Activation
             reciprocating_club_id BIGINT(20) UNSIGNED NOT NULL,
             receive_emails ENUM('yes','no') DEFAULT 'no',
             receive_messages ENUM('yes','no') DEFAULT 'no',
-            visit_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             KEY reciprocating_member_number (reciprocating_member_number),
             KEY id_number (id_number),
             KEY reciprocating_club_id (reciprocating_club_id),
-            KEY visit_date (visit_date),
             KEY email (email),
             KEY phone_number (phone_number)
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
+
+        // Add foreign key separately
+        $foreign_key_name = 'fk_reciprocating_member_club';
+        $constraint_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT CONSTRAINT_NAME 
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+            WHERE TABLE_NAME = %s AND CONSTRAINT_NAME = %s AND TABLE_SCHEMA = DATABASE()",
+            $table_name, $foreign_key_name
+        ));
+
+        if (!$constraint_exists) {
+            $wpdb->query("
+                ALTER TABLE $table_name
+                ADD CONSTRAINT $foreign_key_name
+                FOREIGN KEY (reciprocating_club_id) REFERENCES $clubs_table(id)
+                ON DELETE CASCADE
+            ");
+        }
     }
 
+    private static function create_reciprocating_members_visits_table(): void
+    {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
 
+        $sql = "CREATE TABLE $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            member_id BIGINT(20) UNSIGNED NOT NULL,
+            courtesy VARCHAR(255) DEFAULT NULL,
+            visit_date DATE NOT NULL,
+            status ENUM('approved','unapproved','cancelled','suspended','banned') NOT NULL DEFAULT 'approved',
+            sign_in_time DATETIME DEFAULT NULL,
+            sign_out_time DATETIME DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY member_id (member_id),
+            KEY visit_date (visit_date),
+            KEY sign_in_time (sign_in_time),
+            KEY sign_out_time (sign_out_time),
+            KEY status (status),
+            UNIQUE KEY unique_member_visit_date (member_id, visit_date)
+        ) ENGINE=InnoDB $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+
+        // Add foreign key separately
+        $foreign_key_name = 'fk_recip_member_visit';
+        $constraint_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT CONSTRAINT_NAME 
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+            WHERE TABLE_NAME = %s AND CONSTRAINT_NAME = %s AND TABLE_SCHEMA = DATABASE()",
+            $table_name, $foreign_key_name
+        ));
+
+        if (!$constraint_exists) {
+            $wpdb->query("
+                ALTER TABLE $table_name
+                ADD CONSTRAINT $foreign_key_name
+                FOREIGN KEY (member_id) REFERENCES $members_table(id)
+                ON DELETE CASCADE
+            ");
+        }
+    }
+
+    /**
+     * Create reciprocating clubs table
+     */
     private static function create_reciprocating_clubs_table(): void
     {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
         $table_name = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
 
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        $sql = "CREATE TABLE $table_name (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             club_name VARCHAR(255) NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY club_name_unique (club_name)
+            club_email VARCHAR(255) DEFAULT NULL,
+            club_phone VARCHAR(20) DEFAULT NULL,
+            club_website VARCHAR(255) DEFAULT NULL,
+            status ENUM('active','suspended','banned') DEFAULT 'active',
+            notes TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY club_name (club_name),
+            KEY club_email (club_email),
+            KEY status (status),
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
-
 
     /**
     * Create SMS logs table
@@ -336,7 +415,6 @@ class VMS_Activation
         http_response_code(200);
         echo 'OK';
     }
-
         
     /**
      * Add SMS logs cleanup cron job
@@ -402,12 +480,14 @@ class VMS_Activation
     private static function drop_database_tables(): void
     {
         global $wpdb;
-        $tables = [            
-            VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE),
-            VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),
+        $tables = [  
             VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE),
+            VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE), 
+            VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE),        
+            VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE),          
+            VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE), 
             VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE),
-            VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE)
+            
         ];
         foreach ($tables as $table) {
             $wpdb->query("DROP TABLE IF EXISTS $table");
@@ -420,7 +500,8 @@ class VMS_Activation
             'login', 'register', 'lost-password', 'password-reset',
             'terms-conditions', 'profile', 'dashboard', 'employees',
             'details', 'members', 'employee-details',
-            'guests', 'guest-details', 'settings'
+            'guests', 'guest-details',  'clubs', 'reciprocating-members', 'reciprocating-member-details',
+            'settings'
         ];
 
         foreach ($pages as $slug) {

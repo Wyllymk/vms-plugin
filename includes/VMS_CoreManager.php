@@ -76,6 +76,15 @@ class VMS_CoreManager
         add_action('wp_ajax_vms_ajax_refresh_balance', [self::class, 'vms_ajax_refresh_balance']);
 
         add_action('wp_ajax_change_user_password', [self::class, 'handle_change_user_password'] );
+        add_action('wp_ajax_club_registration', [self::class, 'handle_club_registration'] );
+        add_action('wp_ajax_get_club_data', [self::class, 'handle_get_club_data'] );
+        add_action('wp_ajax_delete_club', [self::class, 'handle_delete_club'] );
+        add_action('wp_ajax_club_update', [self::class, 'handle_club_update'] );
+
+        // Register AJAX handlers
+        add_action('wp_ajax_reciprocating_member_registration', [self::class, 'handle_reciprocating_registration']);
+        add_action('wp_ajax_reciprocating_member_sign_in', [self::class, 'handle_reciprocating_sign_in']);
+        add_action('wp_ajax_reciprocating_member_sign_out', [self::class, 'handle_reciprocating_sign_out']);
 
         add_action('wp_ajax_employee_registration', [self::class, 'handle_employee_registration']);
         add_action('wp_ajax_guest_registration', [self::class, 'handle_guest_registration']);
@@ -1591,6 +1600,796 @@ class VMS_CoreManager
         
         return 'approved';
     }
+
+    /**
+     * Club Registration AJAX Handler
+     */
+    public static function handle_club_registration() 
+    {
+        self::verify_ajax_request(); 
+        global $wpdb;
+
+        // Sanitize input data
+        $club_name   = sanitize_text_field($_POST['club_name'] ?? '');
+        $club_email  = sanitize_email($_POST['club_email'] ?? '');
+        $club_phone  = sanitize_text_field($_POST['club_phone'] ?? '');
+        $club_website= esc_url_raw($_POST['club_website'] ?? '');        
+        $notes       = sanitize_textarea_field($_POST['notes'] ?? '');
+        $status      = sanitize_text_field($_POST['status'] ?? 'active');
+
+        // Validation
+        $errors = [];
+        if (empty($club_name)) {
+            $errors[] = 'Club name is required.';
+        }
+        if (strlen($club_name) > 255) {
+            $errors[] = 'Club name must be less than 255 characters.';
+        }
+        if (!empty($club_email) && !is_email($club_email)) {
+            $errors[] = 'Invalid email address.';
+        }
+
+        // Check for duplicate club name
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+        $existing_club = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$clubs_table} WHERE club_name = %s",
+            $club_name
+        ));
+        if ($existing_club > 0) {
+            $errors[] = 'A club with this name already exists.';
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+        }
+
+        // Prepare data for insertion
+        $club_data = [
+            'club_name'  => $club_name,
+            'club_email' => $club_email,
+            'club_phone' => $club_phone,
+            'club_website' => $club_website,
+            'notes'      => $notes,
+            'status'     => in_array($status, ['active','suspended','banned']) ? $status : 'active',
+            'created_at' => current_time('mysql'),
+        ];
+
+        // Insert into database
+        $result = $wpdb->insert(
+            $clubs_table,
+            $club_data,
+            ['%s','%s','%s','%s','%s','%s','%s']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to create club. Please try again.']]);
+        }
+
+        $club_id = $wpdb->insert_id;
+        $new_club = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$clubs_table} WHERE id = %d",
+            $club_id
+        ));
+
+        if (!$new_club) {
+            wp_send_json_error(['messages' => ['Club created but failed to retrieve data.']]);
+        }
+
+        wp_send_json_success([
+            'messages' => ['Club created successfully!'],
+            'clubData' => [
+                'id'        => $new_club->id,
+                'club_name' => $new_club->club_name,
+                'club_email'=> $new_club->club_email,
+                'club_phone'=> $new_club->club_phone,
+                'status'    => $new_club->status,
+                'created_at'=> $new_club->created_at,
+                'updated_at'=> $new_club->updated_at,
+            ]
+        ]);
+    }
+
+    /**
+     * Club Management AJAX Handlers
+     */
+    // Get Club Data Handler
+    public static function handle_get_club_data() 
+    {
+        self::verify_ajax_request();
+        global $wpdb;
+
+        $club_id = intval($_POST['club_id'] ?? 0);
+        if ($club_id <= 0) {
+            wp_send_json_error(['messages' => ['Invalid club ID.']]);
+        }
+
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+        $club = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$clubs_table} WHERE id = %d",
+            $club_id
+        ));
+
+        if (!$club) {
+            wp_send_json_error(['messages' => ['Club not found.']]);
+        }
+
+        wp_send_json_success([
+            'clubData' => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_email' => $club->club_email,
+                'club_phone' => $club->club_phone,
+                'club_website' => $club->club_website,
+                'status' => $club->status,
+                'notes' => $club->notes,
+                'created_at' => $club->created_at,
+            ]
+        ]);
+    }
+
+    // Update Club Handler
+    public static function handle_club_update() 
+    {
+        self::verify_ajax_request();
+        global $wpdb;
+
+        $club_id     = intval($_POST['club_id'] ?? 0);
+        $club_name   = sanitize_text_field($_POST['club_name'] ?? '');
+        $club_email  = sanitize_email($_POST['club_email'] ?? '');
+        $club_phone  = sanitize_text_field($_POST['club_phone'] ?? '');
+        $club_website = esc_url_raw($_POST['club_website'] ?? '');
+        $club_status = sanitize_text_field($_POST['club_status'] ?? 'active');
+        $notes       = sanitize_textarea_field($_POST['notes'] ?? '');
+
+        $errors = [];
+        if ($club_id <= 0) $errors[] = 'Invalid club ID.';
+        if (empty($club_name)) $errors[] = 'Club name is required.';
+        if (strlen($club_name) > 255) $errors[] = 'Club name must be less than 255 characters.';
+        if (!in_array($club_status, ['active', 'suspended', 'banned'])) {
+            $errors[] = 'Invalid status selected.';
+        }
+
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+
+        // Check duplicate name
+        $existing_club = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$clubs_table} WHERE club_name = %s AND id != %d",
+            $club_name, $club_id
+        ));
+        if ($existing_club > 0) $errors[] = 'A club with this name already exists.';
+
+        // Check existence
+        $current_club = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM {$clubs_table} WHERE id = %d",
+            $club_id
+        ));
+        if (!$current_club) $errors[] = 'Club not found.';
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+        }
+
+        // Update
+        $result = $wpdb->update(
+            $clubs_table,
+            [
+                'club_name'   => $club_name,
+                'club_email'  => $club_email,
+                'club_phone'  => $club_phone,
+                'club_website'=> $club_website,
+                'status'      => $club_status,
+                'notes'       => $notes,
+                'updated_at'  => current_time('mysql')
+            ],
+            ['id' => $club_id],
+            ['%s','%s','%s','%s','%s','%s','%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to update club. Please try again.']]);
+        }
+
+        $updated_club = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$clubs_table} WHERE id = %d",
+            $club_id
+        ));
+
+        wp_send_json_success([
+            'messages' => ['Club updated successfully!'],
+            'clubData' => $updated_club
+        ]);
+    }
+
+
+    // Delete Club Handler
+    public static function handle_delete_club() 
+    {
+        // Verify nonce
+        self::verify_ajax_request();
+
+        global $wpdb;
+        
+        $club_id = intval($_POST['club_id'] ?? 0);
+        
+        if ($club_id <= 0) {
+            wp_send_json_error([
+                'messages' => ['Invalid club ID.']
+            ]);
+        }
+        
+        // Check if club exists
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+        $club = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$clubs_table} WHERE id = %d",
+            $club_id
+        ));
+        
+        if (!$club) {
+            wp_send_json_error([
+                'messages' => ['Club not found.']
+            ]);
+        }
+        
+        // Optional: Check if club has related records and prevent deletion
+        // You can add checks here for related data if needed
+        
+        // Delete club
+        $result = $wpdb->delete(
+            $clubs_table,
+            ['id' => $club_id],
+            ['%d']
+        );
+        
+        if ($result === false) {
+            wp_send_json_error([
+                'messages' => ['Failed to delete club. Please try again.']
+            ]);
+        }
+        
+        if ($result === 0) {
+            wp_send_json_error([
+                'messages' => ['Club not found or already deleted.']
+            ]);
+        }
+        
+        wp_send_json_success([
+            'messages' => ['Club deleted successfully!']
+        ]);
+    }
+
+    /**
+     * Helper function to get clubs with pagination
+     */
+    function get_clubs_paginated($page = 1, $per_page = 25, $search = '') 
+    {
+        global $wpdb;
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+        
+        $offset = ($page - 1) * $per_page;
+        $where_clause = '';
+        $search_params = [];
+        
+        if (!empty($search)) {
+            $like = '%' . $wpdb->esc_like($search) . '%';
+            $where_clause = " WHERE club_name LIKE %s";
+            $search_params[] = $like;
+        }
+        
+        // Count total clubs
+        $count_query = "SELECT COUNT(*) FROM {$clubs_table}" . $where_clause;
+        if (!empty($search_params)) {
+            $total_clubs = $wpdb->get_var($wpdb->prepare($count_query, $search_params));
+        } else {
+            $total_clubs = $wpdb->get_var($count_query);
+        }
+        
+        // Get clubs
+        $query = "SELECT * FROM {$clubs_table}" . $where_clause . " ORDER BY created_at DESC LIMIT %d OFFSET %d";
+        $params = array_merge($search_params, [$per_page, $offset]);
+        
+        $clubs = $wpdb->get_results($wpdb->prepare($query, $params));
+        
+        return [
+            'clubs' => $clubs,
+            'total' => $total_clubs,
+            'pages' => ceil($total_clubs / $per_page)
+        ];
+    }
+
+    /**
+     * Handle reciprocating member registration via AJAX
+     */
+    public static function handle_reciprocating_registration(): void
+    {
+        self::verify_ajax_request();
+        error_log('Handle reciprocating member registration');
+
+        global $wpdb;
+        $errors = [];
+
+        // Sanitize input
+        $first_name = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name = sanitize_text_field($_POST['last_name'] ?? '');
+        $email = sanitize_email($_POST['email'] ?? '');
+        $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
+        $member_number = sanitize_text_field($_POST['member_number'] ?? '');
+        $reciprocating_club_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
+        $visit_date = sanitize_text_field($_POST['visit_date'] ?? '');
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails = isset($_POST['receive_emails']) ? 'yes' : 'no';
+
+        // Validate required fields
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($member_number)) $errors[] = 'Member number is required';
+        if (empty($reciprocating_club_id)) $errors[] = 'Reciprocating club is required';
+
+        // Validate visit date format
+        if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
+            $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
+        } else {
+            $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
+            $current_date = new \DateTime(current_time('Y-m-d'));
+            if (!$visit_date_obj || $visit_date_obj < $current_date) {
+                $errors[] = 'Visit date cannot be in the past';
+            }
+        }
+
+        // Validate reciprocating club exists and is active
+        $club = $reciprocating_club_id ? get_user_by('id', $reciprocating_club_id) : null;
+        if ($reciprocating_club_id && !$club) {
+            $errors[] = 'Invalid reciprocating club selected';
+        } else if ($club) {
+            $club_status = get_user_meta($reciprocating_club_id, 'registration_status', true);
+            if ($club_status !== 'active') {
+                $errors[] = 'Selected club is not active';
+            }
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+            return;
+        }
+
+        // Tables
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+        $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+
+        // Generate unique reciprocating member number
+        $reciprocating_member_number = 'RM' . date('Y') . str_pad(wp_rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+        
+        // Ensure uniqueness
+        while ($wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $members_table WHERE reciprocating_member_number = %s",
+            $reciprocating_member_number
+        ))) {
+            $reciprocating_member_number = 'RM' . date('Y') . str_pad(wp_rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+        }
+
+        // Check if member already exists by member number
+        $existing_member = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, member_status FROM $members_table WHERE id_number = %s",
+            $member_number
+        ));
+
+        if ($existing_member) {
+            $member_id = $existing_member->id;
+            // Update member info
+            $wpdb->update(
+                $members_table,
+                [
+                    'first_name' => $first_name,
+                    'last_name' => $last_name,
+                    'email' => $email,
+                    'phone_number' => $phone_number,
+                    'reciprocating_club_id' => $reciprocating_club_id,
+                    'receive_emails' => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                ],
+                ['id' => $member_id],
+                ['%s', '%s', '%s', '%s', '%d', '%s', '%s'],
+                ['%d']
+            );
+        } else {
+            // Create new reciprocating member
+            $wpdb->insert(
+                $members_table,
+                [
+                    'first_name' => $first_name,
+                    'last_name' => $last_name,
+                    'email' => $email,
+                    'phone_number' => $phone_number,
+                    'id_number' => $member_number,
+                    'reciprocating_member_number' => $reciprocating_member_number,
+                    'reciprocating_club_id' => $reciprocating_club_id,
+                    'member_status' => 'active',
+                    'receive_emails' => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                ],
+                ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s']
+            );
+            $member_id = $wpdb->insert_id;
+        }
+
+        if (!$member_id) {
+            wp_send_json_error(['messages' => ['Failed to create or update reciprocating member record']]);
+            return;
+        }
+
+        // Prevent duplicate visit on the same date
+        $existing_visit = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $visits_table WHERE member_id = %d AND visit_date = %s AND status != 'cancelled'",
+            $member_id,
+            $visit_date
+        ));
+        if ($existing_visit) {
+            wp_send_json_error(['messages' => ['This reciprocating member already has a visit registered on this date']]);
+            return;
+        }
+
+        // Check monthly and yearly limits
+        $today = date('Y-m-d');
+        $month_start = date('Y-m-01', strtotime($visit_date));
+        $month_end = date('Y-m-t', strtotime($visit_date));
+        $year_start = date('Y-01-01', strtotime($visit_date));
+        $year_end = date('Y-12-31', strtotime($visit_date));
+
+        $monthly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $visits_table 
+            WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            AND (
+                (status = 'approved' AND visit_date >= %s) OR
+                (visit_date < %s AND sign_in_time IS NOT NULL)
+            )",
+            $member_id, $month_start, $month_end, $today, $today
+        ));
+
+        $yearly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $visits_table 
+            WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            AND (
+                (status = 'approved' AND visit_date >= %s) OR
+                (visit_date < %s AND sign_in_time IS NOT NULL)
+            )",
+            $member_id, $year_start, $year_end, $today, $today
+        ));
+
+        // Check limits
+        $monthly_limit = 4;
+        $yearly_limit = 24;
+
+        $preliminary_status = 'approved';
+
+        if (($monthly_visits + 1) > $monthly_limit) {
+            $preliminary_status = 'suspended';
+        } elseif (($yearly_visits + 1) > $yearly_limit) {
+            $preliminary_status = 'suspended';
+        }
+
+        // Create visit record
+        $visit_result = $wpdb->insert(
+            $visits_table,
+            [
+                'member_id' => $member_id,
+                'visit_date' => $visit_date,
+                'status' => $preliminary_status
+            ],
+            ['%d', '%s', '%s']
+        );
+
+        if ($visit_result === false) {
+            wp_send_json_error(['messages' => ['Failed to create visit record']]);
+            return;
+        }
+
+        $visit_id = $wpdb->insert_id;
+
+        // Send notifications
+        self::send_reciprocating_registration_emails(
+            $member_id,
+            $first_name,
+            $last_name,
+            $email,
+            $receive_emails,
+            $club,
+            $visit_date,
+            $preliminary_status,
+            $reciprocating_member_number
+        );
+        
+        self::send_reciprocating_registration_sms(
+            $member_id,
+            $first_name,
+            $last_name,
+            $phone_number,
+            $receive_messages,
+            $club,
+            $visit_date,
+            $preliminary_status,
+            $reciprocating_member_number
+        );
+
+        // Prepare member data for response
+        $member_data = [
+            'id' => $member_id,
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => $email,
+            'phone_number' => $phone_number,
+            'id_number' => $member_number,
+            'reciprocating_member_number' => $reciprocating_member_number,
+            'reciprocating_club_id' => $reciprocating_club_id,
+            'club_name' => $club ? $club->display_name : 'N/A',
+            'visit_date' => $visit_date,
+            'receive_emails' => $receive_emails,
+            'receive_messages' => $receive_messages,
+            'status' => $preliminary_status,
+            'member_status' => 'active',
+            'sign_in_time' => null,
+            'sign_out_time' => null,
+            'visit_id' => $visit_id
+        ];
+
+        wp_send_json_success([
+            'messages' => ['Reciprocating member registered successfully'],
+            'memberData' => $member_data
+        ]);
+    }
+
+    /**
+     * Send registration email notifications
+     */
+    private static function send_reciprocating_registration_emails($member_id, $first_name, $last_name, $email, $receive_emails, $club, $visit_date, $status, $reciprocating_member_number): void
+    {
+        if ($receive_emails !== 'yes') {
+            return;
+        }
+
+        $site_name = get_bloginfo('name');
+        $club_name = $club ? $club->display_name : 'N/A';
+        $formatted_date = date('M j, Y', strtotime($visit_date));
+
+        $subject = "Reciprocating Member Registration - {$site_name}";
+        
+        $message = "Dear {$first_name} {$last_name},\n\n";
+        $message .= "Your reciprocating membership registration has been processed successfully.\n\n";
+        $message .= "Registration Details:\n";
+        $message .= "Member Number: {$reciprocating_member_number}\n";
+        $message .= "Club: {$club_name}\n";
+        $message .= "Visit Date: {$formatted_date}\n";
+        $message .= "Status: " . ucfirst($status) . "\n\n";
+
+        if ($status === 'suspended') {
+            $message .= "NOTE: Your visit has been suspended due to exceeding monthly or yearly limits.\n\n";
+        }
+
+        $message .= "Please present this member number when visiting.\n\n";
+        $message .= "Best regards,\n";
+        $message .= "{$site_name} Management Team";
+
+        error_log("Sending reciprocating registration email to: {$email}");
+        wp_mail($email, $subject, $message);
+    }
+
+    /**
+     * Send registration SMS notifications
+     */
+    private static function send_reciprocating_registration_sms($member_id, $first_name, $last_name, $phone_number, $receive_messages, $club, $visit_date, $status, $reciprocating_member_number): void
+    {
+        if ($receive_messages !== 'yes') {
+            return;
+        }
+
+        $site_name = get_bloginfo('name');
+        $club_name = $club ? $club->display_name : 'Club';
+        $formatted_date = date('M j', strtotime($visit_date));
+
+        $sms_message = "{$site_name}: Hello {$first_name}, ";
+        $sms_message .= "reciprocating membership registered. ";
+        $sms_message .= "Number: {$reciprocating_member_number}. ";
+        $sms_message .= "Club: {$club_name}. ";
+        $sms_message .= "Visit: {$formatted_date}. ";
+        $sms_message .= "Status: " . ucfirst($status) . ".";
+
+        error_log("Sending reciprocating registration SMS to: {$phone_number}");
+        
+        if (class_exists('VMS_NotificationManager')) {
+            VMS_NotificationManager::send_sms(
+                $phone_number,
+                $sms_message,
+                $member_id,
+                'reciprocating_member'
+            );
+        }
+    }
+
+    /**
+     * Handle reciprocating member sign in
+     */
+    public static function handle_reciprocating_sign_in(): void
+    {
+        self::verify_ajax_request();
+        
+        $visit_id = absint($_POST['visit_id'] ?? 0);
+        if (!$visit_id) {
+            wp_send_json_error(['message' => 'Invalid visit ID']);
+            return;
+        }
+
+        global $wpdb;
+        $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+
+        // Get visit and member details
+        $visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT v.*, m.first_name, m.last_name, m.phone_number, m.receive_messages, m.member_status
+            FROM $visits_table v 
+            JOIN $members_table m ON v.member_id = m.id 
+            WHERE v.id = %d",
+            $visit_id
+        ));
+
+        if (!$visit) {
+            wp_send_json_error(['message' => 'Visit not found']);
+            return;
+        }
+
+        // Check if member and status allow sign in
+        if ($visit->member_status !== 'active' || $visit->status !== 'approved') {
+            wp_send_json_error(['message' => 'Cannot sign in - member or visit not active/approved']);
+            return;
+        }
+
+        // Update sign in time
+        $result = $wpdb->update(
+            $visits_table,
+            ['sign_in_time' => current_time('mysql')],
+            ['id' => $visit_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['message' => 'Failed to sign in']);
+            return;
+        }
+
+        // Send sign in SMS
+        self::send_reciprocating_sign_in_sms($visit);
+
+        wp_send_json_success(['message' => 'Signed in successfully']);
+    }
+
+    /**
+     * Handle reciprocating member sign out
+     */
+    public static function handle_reciprocating_sign_out(): void
+    {
+        self::verify_ajax_request();
+        
+        $visit_id = absint($_POST['visit_id'] ?? 0);
+        if (!$visit_id) {
+            wp_send_json_error(['message' => 'Invalid visit ID']);
+            return;
+        }
+
+        global $wpdb;
+        $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+
+        // Get visit and member details
+        $visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT v.*, m.first_name, m.last_name, m.phone_number, m.receive_messages
+            FROM $visits_table v 
+            JOIN $members_table m ON v.member_id = m.id 
+            WHERE v.id = %d AND v.sign_in_time IS NOT NULL",
+            $visit_id
+        ));
+
+        if (!$visit) {
+            wp_send_json_error(['message' => 'Visit not found or not signed in']);
+            return;
+        }
+
+        if (empty($visit->sign_in_time)) {
+            wp_send_json_error(['messages' => ['Reciprocating Member must be signed in first']]);
+            return;
+        }
+
+        if (!empty($visit->sign_out_time)) {
+            wp_send_json_error(['messages' => ['Reciprocating Member already signed out']]);
+            return;
+        }
+
+        $signout_time = current_time('mysql');
+
+        // Update sign out time
+        $result = $wpdb->update(
+            $visits_table,
+            ['sign_out_time' => $signout_time],
+            ['id' => $visit_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['message' => 'Failed to sign out']);
+            return;
+        }
+
+        // Send sign out SMS
+        self::send_reciprocating_sign_out_sms($visit);
+
+        // Prepare response data
+        $recip_data_response = [
+            'first_name' => $visit->first_name,
+            'last_name' => $visit->last_name,
+            'sign_in_time' => $visit->sign_in_time,
+            'sign_out_time' => $signout_time,
+            'visit_id' => $visit_id
+        ];
+
+        wp_send_json_success([
+            'messages' => ['Reciprocating member signed out successfully'],
+            'recipData' => $recip_data_response
+        ]);
+    }
+
+    /**
+     * Send sign in SMS notification
+     */
+    private static function send_reciprocating_sign_in_sms($visit): void
+    {
+        if ($visit->receive_messages !== 'yes') {
+            return;
+        }
+
+        $site_name = get_bloginfo('name');
+        $sign_in_time = date('g:i A', strtotime(current_time('mysql')));
+        
+        $sms_message = "{$site_name}: Hello {$visit->first_name}, ";
+        $sms_message .= "you have signed in successfully at {$sign_in_time}. ";
+        $sms_message .= "Enjoy your visit!";
+
+        if (class_exists('VMS_NotificationManager')) {
+            VMS_NotificationManager::send_sms(
+                $visit->phone_number,
+                $sms_message,
+                $visit->member_id,
+                'reciprocating_member'
+            );
+        }
+    }
+
+    /**
+     * Send sign out SMS notification
+     */
+    private static function send_reciprocating_sign_out_sms($visit): void
+    {
+        if ($visit->receive_messages !== 'yes') {
+            return;
+        }
+
+        $site_name = get_bloginfo('name');
+        $sign_out_time = date('g:i A', strtotime(current_time('mysql')));
+        
+        $sms_message = "{$site_name}: Hello {$visit->first_name}, ";
+        $sms_message .= "you have signed out at {$sign_out_time}. ";
+        $sms_message .= "Thank you for visiting!";
+
+        if (class_exists('VMS_NotificationManager')) {
+            VMS_NotificationManager::send_sms(
+                $visit->phone_number,
+                $sms_message,
+                $visit->member_id,
+                'reciprocating_member'
+            );
+        }
+    }
+
 
     /**
      * Handle guest registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
