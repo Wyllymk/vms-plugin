@@ -1913,6 +1913,7 @@ class VMS_CoreManager
         $last_name = sanitize_text_field($_POST['last_name'] ?? '');
         $email = sanitize_email($_POST['email'] ?? '');
         $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
+        $id_number = sanitize_text_field($_POST['id_number'] ?? '');
         $member_number = sanitize_text_field($_POST['member_number'] ?? '');
         $reciprocating_club_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
         $visit_date = sanitize_text_field($_POST['visit_date'] ?? '');
@@ -1938,15 +1939,14 @@ class VMS_CoreManager
             }
         }
 
-        // Validate reciprocating club exists and is active
-        $club = $reciprocating_club_id ? get_user_by('id', $reciprocating_club_id) : null;
-        if ($reciprocating_club_id && !$club) {
-            $errors[] = 'Invalid reciprocating club selected';
-        } else if ($club) {
-            $club_status = get_user_meta($reciprocating_club_id, 'registration_status', true);
-            if ($club_status !== 'active') {
-                $errors[] = 'Selected club is not active';
-            }
+        // Validate reciprocating club exists
+        $club = null;
+        if ($reciprocating_club_id) {
+            $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+            $club = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM $clubs_table WHERE id = %d",
+                $reciprocating_club_id
+            ));
         }
 
         if (!empty($errors)) {
@@ -1959,15 +1959,7 @@ class VMS_CoreManager
         $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
 
         // Generate unique reciprocating member number
-        $reciprocating_member_number = 'RM' . date('Y') . str_pad(wp_rand(1000, 9999), 4, '0', STR_PAD_LEFT);
-        
-        // Ensure uniqueness
-        while ($wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $members_table WHERE reciprocating_member_number = %s",
-            $reciprocating_member_number
-        ))) {
-            $reciprocating_member_number = 'RM' . date('Y') . str_pad(wp_rand(1000, 9999), 4, '0', STR_PAD_LEFT);
-        }
+        $reciprocating_member_number = $member_number; 
 
         // Check if member already exists by member number
         $existing_member = $wpdb->get_row($wpdb->prepare(
@@ -2002,7 +1994,7 @@ class VMS_CoreManager
                     'last_name' => $last_name,
                     'email' => $email,
                     'phone_number' => $phone_number,
-                    'id_number' => $member_number,
+                    'id_number' => $id_number,
                     'reciprocating_member_number' => $reciprocating_member_number,
                     'reciprocating_club_id' => $reciprocating_club_id,
                     'member_status' => 'active',
@@ -2119,10 +2111,10 @@ class VMS_CoreManager
             'last_name' => $last_name,
             'email' => $email,
             'phone_number' => $phone_number,
-            'id_number' => $member_number,
+            'id_number' => $id_number,
             'reciprocating_member_number' => $reciprocating_member_number,
             'reciprocating_club_id' => $reciprocating_club_id,
-            'club_name' => $club ? $club->display_name : 'N/A',
+            'club_name' => $club ? $club->club_name : 'N/A',
             'visit_date' => $visit_date,
             'receive_emails' => $receive_emails,
             'receive_messages' => $receive_messages,
@@ -2149,7 +2141,7 @@ class VMS_CoreManager
         }
 
         $site_name = get_bloginfo('name');
-        $club_name = $club ? $club->display_name : 'N/A';
+        $club_name = $club ? $club->club_name : 'N/A';
         $formatted_date = date('M j, Y', strtotime($visit_date));
 
         $subject = "Reciprocating Member Registration - {$site_name}";
@@ -2184,7 +2176,7 @@ class VMS_CoreManager
         }
 
         $site_name = get_bloginfo('name');
-        $club_name = $club ? $club->display_name : 'Club';
+        $club_name = $club ? $club->club_name : 'Club';
         $formatted_date = date('M j', strtotime($visit_date));
 
         $sms_message = "{$site_name}: Hello {$first_name}, ";
@@ -2212,37 +2204,37 @@ class VMS_CoreManager
     public static function handle_reciprocating_sign_in(): void
     {
         self::verify_ajax_request();
-        
+    
         $visit_id = absint($_POST['visit_id'] ?? 0);
         if (!$visit_id) {
             wp_send_json_error(['message' => 'Invalid visit ID']);
             return;
         }
-
+        
         global $wpdb;
         $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
         $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
-
+        
         // Get visit and member details
         $visit = $wpdb->get_row($wpdb->prepare(
             "SELECT v.*, m.first_name, m.last_name, m.phone_number, m.receive_messages, m.member_status
-            FROM $visits_table v 
-            JOIN $members_table m ON v.member_id = m.id 
+            FROM $visits_table v
+            JOIN $members_table m ON v.member_id = m.id
             WHERE v.id = %d",
             $visit_id
         ));
-
+        
         if (!$visit) {
             wp_send_json_error(['message' => 'Visit not found']);
             return;
         }
-
+        
         // Check if member and status allow sign in
         if ($visit->member_status !== 'active' || $visit->status !== 'approved') {
             wp_send_json_error(['message' => 'Cannot sign in - member or visit not active/approved']);
             return;
         }
-
+        
         // Update sign in time
         $result = $wpdb->update(
             $visits_table,
@@ -2251,16 +2243,25 @@ class VMS_CoreManager
             ['%s'],
             ['%d']
         );
-
+        
         if ($result === false) {
             wp_send_json_error(['message' => 'Failed to sign in']);
             return;
         }
-
+        
         // Send sign in SMS
         self::send_reciprocating_sign_in_sms($visit);
-
-        wp_send_json_success(['message' => 'Signed in successfully']);
+        
+        // Return success with member data for sign out button
+        wp_send_json_success([
+            'message' => 'Signed in successfully',
+            'memberData' => [
+                'id' => $visit->member_id,
+                'visit_id' => $visit_id,
+                'first_name' => $visit->first_name,
+                'last_name' => $visit->last_name
+            ]
+        ]);
     }
 
     /**
