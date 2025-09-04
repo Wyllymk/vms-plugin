@@ -91,7 +91,10 @@ class VMS_CoreManager
         add_action('wp_ajax_courtesy_guest_registration', [self::class, 'handle_courtesy_guest_registration']);
         add_action('wp_ajax_update_guest', [self::class, 'handle_guest_update']);
         add_action('wp_ajax_delete_guest', [self::class, 'handle_guest_deletion']);
+        add_action('wp_ajax_update_member', [self::class, 'handle_member_update']);
+        add_action('wp_ajax_delete_member', [self::class, 'handle_member_deletion']);
         add_action('wp_ajax_register_visit', [self::class, 'handle_visit_registration']);
+        add_action('wp_ajax_register_reciprocation_member_visit', [self::class, 'handle_reciprocation_member_visit_registration']);
 
         add_action('wp_ajax_sign_in_guest', [self::class, 'handle_sign_in_guest']);
         add_action('wp_ajax_sign_out_guest', [self::class, 'handle_sign_out_guest']);
@@ -1025,6 +1028,156 @@ class VMS_CoreManager
             'messages' => ['Guest signed out successfully'],
             'guestData' => $guest_data_response
         ]);
+    }
+
+    /**
+     * Recalculate visit statuses for a specific reciprocating member - with notifications
+     */
+    public static function recalculate_member_visit_statuses(int $member_id): void
+    {
+        global $wpdb;
+        
+        $recip_visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        $recip_members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+        $monthly_limit = 4;
+        $yearly_limit = 12;
+        
+        // Get member data for notifications
+        $member = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$recip_members_table} WHERE id = %d",
+            $member_id
+        ));
+
+        if (!$member) return;
+
+        $old_member_status = $member->member_status;
+        
+        // Fetch all non-cancelled visits for this member, ordered by visit_date ASC
+        $visits = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, visit_date, sign_in_time, status 
+            FROM $recip_visits_table 
+            WHERE member_id = %d AND status != 'cancelled' 
+            ORDER BY visit_date ASC",
+            $member_id
+        ));
+        
+        if (!$visits) return;
+        
+        $monthly_scheduled = [];
+        $yearly_scheduled = [];
+        $status_changes = [];
+        
+        foreach ($visits as $visit) {
+            $month_key = date('Y-m', strtotime($visit->visit_date));
+            $year_key = date('Y', strtotime($visit->visit_date));
+            
+            if (!isset($monthly_scheduled[$month_key])) $monthly_scheduled[$month_key] = 0;
+            if (!isset($yearly_scheduled[$year_key])) $yearly_scheduled[$year_key] = 0;
+            
+            $visit_date_obj = new \DateTime($visit->visit_date);
+            $today = new \DateTime(current_time('Y-m-d'));
+            $is_past = $visit_date_obj < $today;
+            $attended = $is_past && !empty($visit->sign_in_time);
+            
+            // Increment counts for future visits or past attended visits
+            if (!$is_past || $attended) {
+                $monthly_scheduled[$month_key]++;
+                $yearly_scheduled[$year_key]++;
+            }
+            
+            // Determine status for this visit
+            $old_status = $visit->status;
+            $new_status = 'approved';
+            
+            // Check monthly/yearly limits
+            if ($monthly_scheduled[$month_key] > $monthly_limit || $yearly_scheduled[$year_key] > $yearly_limit) {
+                $new_status = 'unapproved';
+            }
+            
+            // If this is a missed past visit, reduce counts to free slots
+            if ($is_past && empty($visit->sign_in_time)) {
+                $monthly_scheduled[$month_key]--;
+                $yearly_scheduled[$year_key]--;
+            }
+            
+            // Update only if status changed
+            if ($visit->status !== $new_status) {
+                $wpdb->update(
+                    $recip_visits_table,
+                    ['status' => $new_status],
+                    ['id' => $visit->id],
+                    ['%s'],
+                    ['%d']
+                );
+                
+                // Track status changes for notifications
+                $status_changes[] = [
+                    'visit_id' => $visit->id,
+                    'visit_date' => $visit->visit_date,
+                    'old_status' => $old_status,
+                    'new_status' => $new_status
+                ];
+            }
+        }
+
+        // Check if member should be automatically suspended due to limits
+        $current_month = date('Y-m');
+        $current_year = date('Y');
+        $new_member_status = $member->member_status;
+
+        if ($member->member_status === 'active') {
+            $current_monthly = $monthly_scheduled[$current_month] ?? 0;
+            $current_yearly = $yearly_scheduled[$current_year] ?? 0;
+
+            if ($current_monthly >= $monthly_limit || $current_yearly >= $yearly_limit) {
+                $new_member_status = 'suspended';
+            }
+        }
+
+        // Update member status if changed
+        if ($new_member_status !== $old_member_status) {
+            $wpdb->update(
+                $recip_members_table,
+                ['member_status' => $new_member_status, 'updated_at' => current_time('mysql')],
+                ['id' => $member_id],
+                ['%s', '%s'],
+                ['%d']
+            );
+
+            // Send member status change notification
+            $member_data = [
+                'first_name' => $member->first_name,
+                'phone_number' => $member->phone_number,
+                'email' => $member->email,
+                'receive_messages' => $member->receive_messages,
+                'receive_emails' => $member->receive_emails,
+                'user_id' => $member_id
+            ];
+
+            VMS_NotificationManager::get_instance()->send_member_status_notification(
+                $member_data, $old_member_status, $new_member_status
+            );
+        }
+
+        // Send visit status change notifications
+        foreach ($status_changes as $change) {
+            $member_data = [
+                'first_name' => $member->first_name,
+                'phone_number' => $member->phone_number,
+                'email' => $member->email,
+                'receive_messages' => $member->receive_messages,
+                'receive_emails' => $member->receive_emails,
+                'user_id' => $member_id
+            ];
+
+            $visit_data = [
+                'visit_date' => $change['visit_date']
+            ];
+
+            VMS_NotificationManager::get_instance()->send_member_visit_status_notification(
+                $member_data, $visit_data, $change['old_status'], $change['new_status']
+            );
+        }
     }
 
     /**
@@ -3304,6 +3457,303 @@ class VMS_CoreManager
     }
 
     /**
+     * Handle visit registration via AJAX - UPDATED WITH EMAIL NOTIFICATIONS
+     */
+    public static function handle_reciprocation_member_visit_registration() 
+    {
+        global $wpdb;
+
+        $member_id  = isset($_POST['member_id']) ? absint($_POST['member_id']) : 0;
+        $visit_date = sanitize_text_field($_POST['visit_date'] ?? '');
+
+        $errors = [];
+
+        // Validate member
+        if ($member_id <= 0) {
+            $errors[] = 'Member is required';
+        } else {
+            $recip_members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+            $member_exists = $wpdb->get_var(
+                $wpdb->prepare("SELECT COUNT(*) FROM $recip_members_table WHERE id = %d", $member_id)
+            );
+            if (!$member_exists) {
+                $errors[] = 'Invalid member selected';
+            }
+        }
+        
+        // Validate visit date
+        if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
+            $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
+        } else {
+            $visit_date_obj = \DateTime::createFromFormat('Y-m-d', $visit_date);
+            $current_date   = new \DateTime(current_time('Y-m-d'));
+            if (!$visit_date_obj || $visit_date_obj < $current_date) {
+                $errors[] = 'Visit date cannot be in the past';
+            }
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+        }
+
+        $table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+
+        // Get member info for emails
+        $member_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT first_name, last_name, email, phone_number, receive_emails, receive_messages 
+            FROM $members_table WHERE id = %d",
+            $member_id
+        ));
+
+        // Prevent duplicate visit on same date (except cancelled)
+        $existing_visit = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE member_id = %d AND visit_date = %s",
+            $member_id,
+            $visit_date
+        ));
+
+        if ($existing_visit && $existing_visit->status !== 'cancelled') {
+            wp_send_json_error(['messages' => ['This member already has a visit registered on this date']]);
+        }
+
+        // Monthly and yearly limits: count only approved visits and past sign-ins
+        $month_start = date('Y-m-01', strtotime($visit_date));
+        $month_end   = date('Y-m-t', strtotime($visit_date));
+        $year_start  = date('Y-01-01', strtotime($visit_date));
+        $year_end    = date('Y-12-31', strtotime($visit_date));
+        $today = date('Y-m-d');
+
+        $monthly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table 
+            WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            AND (
+                (status = 'approved' AND visit_date >= %s) OR
+                (visit_date < %s AND sign_in_time IS NOT NULL)
+            )",
+            $member_id, $month_start, $month_end, $today, $today
+        ));
+
+        $yearly_visits = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table 
+            WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            AND (
+                (status = 'approved' AND visit_date >= %s) OR
+                (visit_date < %s AND sign_in_time IS NOT NULL)
+            )",
+            $member_id, $year_start, $year_end, $today, $today
+        ));
+
+        $monthly_limit = 4;
+        $yearly_limit  = 12;
+
+        if ($monthly_visits >= $monthly_limit) {
+            wp_send_json_error(['messages' => ['This member has reached the monthly visit limit']]);
+        }
+        if ($yearly_visits >= $yearly_limit) {
+            wp_send_json_error(['messages' => ['This member has reached the yearly visit limit']]);
+        }
+
+        // Determine preliminary status
+        $preliminary_status = 'approved';
+        
+        // If member limits would be exceeded, mark as unapproved
+        if (($monthly_visits + 1) > $monthly_limit || ($yearly_visits + 1) > $yearly_limit) {
+            $preliminary_status = 'unapproved';
+        }
+
+        if ($existing_visit && $existing_visit->status === 'cancelled') {
+            // Reuse cancelled row
+            $updated = $wpdb->update(
+                $table,
+                [
+                    'status'         => $preliminary_status,
+                    'courtesy'       => $courtesy,
+                    'sign_in_time'   => null,
+                    'sign_out_time'  => null,
+                ],
+                ['id' => $existing_visit->id],
+                ['%s','%s','%s','%s'],
+                ['%d']
+            );
+
+            if ($updated === false) {
+                wp_send_json_error(['messages' => ['Failed to update cancelled visit']]);
+            }
+
+            $visit_id = $existing_visit->id;
+        } else {
+            // Insert new row
+            $inserted = $wpdb->insert(
+                $table,
+                [
+                    'member_id'      => $member_id,
+                    'courtesy'       => $courtesy,
+                    'visit_date'     => $visit_date,
+                    'status'         => $preliminary_status
+                ],
+                ['%d','%s','%s','%s']
+            );        
+
+            if (!$inserted) {
+                wp_send_json_error(['messages' => ['Failed to register visit']]);
+            }
+
+            $visit_id = $wpdb->insert_id;
+        }
+
+        // Send notifications
+        if ($member_info) {            
+            // Email
+            self::send_member_visit_registration_emails(
+                $member_info->first_name,
+                $member_info->last_name,
+                $member_info->email,
+                $member_info->receive_emails,
+                $visit_date,
+                $preliminary_status
+            );
+
+            // SMS
+            self::send_member_visit_registration_sms(
+                $member_id,
+                $member_info->first_name,
+                $member_info->last_name,
+                $member_info->phone_number,
+                $member_info->receive_messages,
+                $visit_date,
+                $preliminary_status
+            );            
+        }
+
+        $visit = $wpdb->get_row("SELECT * FROM $table WHERE id = $visit_id");
+
+        // Status fields
+        $status       = self::get_visit_status($visit->visit_date, $visit->sign_in_time, $visit->sign_out_time);
+        $status_class = self::get_status_class($status);
+        $status_text  = self::get_status_text($status);
+
+        wp_send_json_success([
+            'id'            => $visit->id,
+            'visit_date'    => self::format_date($visit->visit_date),
+            'sign_in_time'  => self::format_time($visit->sign_in_time),
+            'sign_out_time' => self::format_time($visit->sign_out_time),
+            'duration'      => self::calculate_duration($visit->sign_in_time, $visit->sign_out_time),
+            'status'        => $preliminary_status,
+            'status_class'  => $status_class,
+            'status_text'   => $status_text,
+            'messages'      => ['Visit registered successfully']
+        ]);
+    }
+
+    /**
+     * Send SMS notifications for reciprocating member visit registration
+     */
+    private static function send_member_visit_registration_sms($member_id, $first_name, $last_name, $member_phone, $member_receive_messages, $visit_date, $status) 
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+
+        // Send SMS to member if opted in
+        if ($member_receive_messages === 'yes' && !empty($member_phone)) {
+            $member_message = "Nyeri Club: Dear " . $first_name . ",\nYour reciprocating member visit on $formatted_date is $status_text.";
+            $role = 'reciprocating_member';
+            
+            if ($status === 'approved') {
+                $member_message .= " Please carry a valid ID and your reciprocating membership card.";
+            } else {
+                $member_message .= " You will be notified once approved.";
+            }
+
+            error_log("Sending SMS to member ID $member_id at $member_phone: $member_message");
+
+            VMS_NotificationManager::send_sms($member_phone, $member_message, $member_id, $role);
+        }
+
+        // Send SMS to admin/management
+        $admin_users = get_users(['role' => 'administrator']);
+        foreach ($admin_users as $admin) {
+            $admin_receive_messages = get_user_meta($admin->ID, 'receive_messages', true);
+            $admin_phone = get_user_meta($admin->ID, 'phone_number', true);
+            $admin_first_name = get_user_meta($admin->ID, 'first_name', true);
+
+            if ($admin_receive_messages === 'yes' && !empty($admin_phone)) {
+                $admin_message = "Nyeri Club: Dear " . $admin_first_name . ",\nReciprocating member $first_name $last_name has registered for $formatted_date. Status: $status_text.";
+                
+                if ($status !== 'approved') {
+                    $admin_message .= " Requires approval due to limits.";
+                }
+
+                error_log("Sending SMS to admin ID {$admin->ID} at $admin_phone: $admin_message");
+
+                VMS_NotificationManager::send_sms($admin_phone, $admin_message, $admin->ID, 'administrator');
+            }
+        }
+    }
+
+    /**
+     * Send email notifications for reciprocating member visit registration
+     */
+    private static function send_member_visit_registration_emails($first_name, $last_name, $member_email, $member_receive_emails, $visit_date, $status)
+    {
+        $formatted_date = date('F j, Y', strtotime($visit_date));
+        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
+
+        // Send email to member if they opted in
+        if ($member_receive_emails === 'yes' && !empty($member_email)) {
+            $member_subject = 'Reciprocating Member Visit Registration - Nyeri Club';
+            
+            $member_message = "Dear " . $first_name . ",\n\n";
+            $member_message .= "Your reciprocating member visit to Nyeri Club has been registered successfully.\n\n";
+            $member_message .= "Visit Details:\n";
+            $member_message .= "Date: " . $formatted_date . "\n";
+            $member_message .= "Status: " . ucfirst($status_text) . "\n\n";
+            
+            if ($status === 'approved') {
+                $member_message .= "Your visit has been approved. Please present a valid ID and your reciprocating membership card when you arrive.\n\n";
+            } else {
+                $member_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
+            }
+            
+            $member_message .= "Thank you for visiting Nyeri Club.\n\n";
+            $member_message .= "Best regards,\n";
+            $member_message .= "Nyeri Club Visitor Management System";
+
+            wp_mail($member_email, $member_subject, $member_message);
+        }
+
+        // Send email to admin/management
+        $admin_users = get_users(['role' => 'administrator']);
+        foreach ($admin_users as $admin) {
+            $admin_receive_emails = get_user_meta($admin->ID, 'receive_emails', true);
+            $admin_first_name = get_user_meta($admin->ID, 'first_name', true);
+            $admin_last_name = get_user_meta($admin->ID, 'last_name', true);
+            
+            if ($admin_receive_emails === 'yes') {
+                $admin_subject = 'New Reciprocating Member Visit Registration - Nyeri Club';
+                
+                $admin_message = "Dear " . $admin_first_name . " " . $admin_last_name . ",\n\n";
+                $admin_message .= "A reciprocating member has registered for a visit.\n\n";
+                $admin_message .= "Member Details:\n";
+                $admin_message .= "Name: " . $first_name . " " . $last_name . "\n";
+                $admin_message .= "Visit Date: " . $formatted_date . "\n";
+                $admin_message .= "Status: " . ucfirst($status_text) . "\n\n";
+                
+                if ($status === 'approved') {
+                    $admin_message .= "The visit has been approved automatically.\n\n";
+                } else {
+                    $admin_message .= "The visit is pending approval due to capacity limits. Please review and approve if appropriate.\n\n";
+                }
+                
+                $admin_message .= "Best regards,\n";
+                $admin_message .= "Nyeri Club Visitor Management System";
+
+                wp_mail($admin->user_email, $admin_subject, $admin_message);
+            }
+        }
+    }
+
+    /**
      * Send SMS notifications for guest registration with host
      */
     private static function send_guest_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status) 
@@ -3687,6 +4137,270 @@ class VMS_CoreManager
         }
 
         return 'approved';
+    }
+
+    // Handle member update via AJAX
+    public static function handle_member_update() 
+    {
+        // Verify nonce
+        self::verify_ajax_request();
+
+        error_log('Handle member update');
+
+        $errors = [];
+
+        // Sanitize input
+        $member_id            = sanitize_text_field($_POST['member_id'] ?? '');
+        $first_name           = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name            = sanitize_text_field($_POST['last_name'] ?? '');
+        $email                = sanitize_email($_POST['email'] ?? '');
+        $phone_number         = sanitize_text_field($_POST['phone_number'] ?? '');
+        $id_number            = sanitize_text_field($_POST['id_number'] ?? '');
+        $reciprocating_member_number = sanitize_text_field($_POST['reciprocating_member_number'] ?? '');
+        $member_status        = sanitize_text_field($_POST['member_status'] ?? 'active');
+        $receive_messages     = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails       = isset($_POST['receive_emails']) ? 'yes' : 'no';
+
+        // Validate required fields
+        if (empty($member_id)) $errors[] = 'Member ID is required';
+        if (empty($first_name)) $errors[] = 'First name is required';
+        if (empty($last_name)) $errors[] = 'Last name is required';
+        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        if (empty($phone_number)) $errors[] = 'Phone number is required';
+        if (empty($id_number)) $errors[] = 'ID number is required';
+        if (empty($reciprocating_member_number)) $errors[] = 'Member number is required';
+
+        // Validate status
+        $valid_statuses = ['active', 'suspended', 'banned'];
+        if (!in_array($member_status, $valid_statuses)) {
+            $errors[] = 'Invalid member status';
+        }
+
+        if (!empty($errors)) {
+            wp_send_json_error(['messages' => $errors]);
+            return;
+        }
+
+        global $wpdb;
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+
+        // Fetch existing member before update
+        $member = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $members_table WHERE id = %d",
+            $member_id
+        ));
+
+        if (!$member) {
+            wp_send_json_error(['messages' => ['Member not found']]);
+            return;
+        }
+
+        // Save old and new status
+        $old_status = $member->member_status;
+        $new_status = $member_status;
+
+        // Check if ID number is already used by another member
+        $id_number_exists = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $members_table WHERE id_number = %s AND id != %d",
+            $id_number, $member_id
+        ));
+
+        if ($id_number_exists) {
+            wp_send_json_error(['messages' => ['ID number is already in use by another member']]);
+            return;
+        }
+
+        // Check if member number is already used by another member
+        $member_number_exists = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $members_table WHERE reciprocating_member_number = %s AND id != %d",
+            $reciprocating_member_number, $member_id
+        ));
+
+        if ($member_number_exists) {
+            wp_send_json_error(['messages' => ['Member number is already in use by another member']]);
+            return;
+        }
+
+        // Check if email is already used by another member
+        $email_exists = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $members_table WHERE email = %s AND id != %d",
+            $email, $member_id
+        ));
+
+        if ($email_exists) {
+            wp_send_json_error(['messages' => ['Email is already in use by another member']]);
+            return;
+        }
+
+        // Update member
+        $result = $wpdb->update(
+            $members_table,
+            [
+                'first_name'                  => $first_name,
+                'last_name'                   => $last_name,
+                'email'                       => $email,
+                'phone_number'                => $phone_number,
+                'id_number'                   => $id_number,
+                'reciprocating_member_number' => $reciprocating_member_number,
+                'member_status'               => $new_status,
+                'receive_messages'            => $receive_messages,
+                'receive_emails'              => $receive_emails,
+                'updated_at'                  => current_time('mysql')
+            ],
+            ['id' => $member_id],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to update member record']]);
+            return;
+        }
+
+        // Build member data array
+        $member_data = [
+            'first_name'       => $first_name,
+            'last_name'        => $last_name,
+            'phone_number'     => $phone_number,
+            'email'            => $email,
+            'receive_messages' => $receive_messages,
+            'receive_emails'   => $receive_emails,
+            'user_id'          => $member_id,
+            'reciprocating_member_number' => $reciprocating_member_number
+        ];
+
+        // Send notifications if status changed
+        if ($old_status !== $new_status) {
+            self::send_member_status_change_email($member_data, $old_status, $new_status);
+            self::send_member_status_change_sms($member_data, $old_status, $new_status);
+        }
+
+        wp_send_json_success([
+            'message' => 'Member updated successfully'
+        ]);
+    }
+
+    // Handle member deletion via AJAX
+    public static function handle_member_deletion() 
+    {
+        // Verify nonce
+        self::verify_ajax_request();
+
+        $member_id = isset($_POST['member_id']) ? absint($_POST['member_id']) : 0;
+
+        error_log('Delete member ID: ' . $member_id);
+
+        if (empty($member_id)) {
+            wp_send_json_error(['messages' => ['Member ID is required']]);
+            return;
+        }
+
+        global $wpdb;
+        $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+        $visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+
+        // Check if member exists
+        $existing_member = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, first_name, last_name FROM $members_table WHERE id = %d",
+            $member_id
+        ));
+
+        if (!$existing_member) {
+            wp_send_json_error(['messages' => ['Member not found']]);
+            return;
+        }
+
+        // Check if member has any visits
+        $visit_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $visits_table WHERE member_id = %d",
+            $member_id
+        ));
+
+        if ($visit_count > 0) {
+            wp_send_json_error(['messages' => ['Cannot delete member with existing visit records. Please archive the member instead.']]);
+            return;
+        }
+
+        // Delete the member
+        $result = $wpdb->delete(
+            $members_table,
+            ['id' => $member_id],
+            ['%d']
+        );
+
+        if ($result === false) {
+            wp_send_json_error(['messages' => ['Failed to delete member record']]);
+            return;
+        }
+
+        // Log the deletion
+        error_log(sprintf(
+            'Member deleted: ID=%d, Name=%s %s',
+            $member_id,
+            $existing_member->first_name,
+            $existing_member->last_name
+        ));
+
+        wp_send_json_success([
+            'message' => 'Member deleted successfully'
+        ]);
+    }
+
+    // Helper function to send member status change email
+    private static function send_member_status_change_email($member_data, $old_status, $new_status)
+    {
+        // Only send email if member wants to receive emails
+        if ($member_data['receive_emails'] !== 'yes') {
+            return;
+        }
+
+        $to = $member_data['email'];
+        $subject = 'Member Status Update';
+        
+        $status_messages = [
+            'active' => 'Your membership status has been activated. You now have full access to all club facilities and services.',
+            'suspended' => 'Your membership has been temporarily suspended. Please contact the club administration for more information.',
+            'banned' => 'Your membership has been terminated. Please contact the club administration if you believe this is an error.'
+        ];
+
+        $message = sprintf(
+            "Dear %s %s,\n\nYour membership status has been updated from %s to %s.\n\n%s\n\nBest regards,\nClub Administration",
+            $member_data['first_name'],
+            $member_data['last_name'],
+            ucfirst($old_status),
+            ucfirst($new_status),
+            $status_messages[$new_status] ?? 'Please contact the club administration for more information.'
+        );
+
+        wp_mail($to, $subject, $message);
+    }
+
+    // Helper function to send member status change SMS
+    private static function send_member_status_change_sms($member_data, $old_status, $new_status)
+    {
+        // Only send SMS if member wants to receive messages
+        if ($member_data['receive_messages'] !== 'yes') {
+            return;
+        }
+
+        $phone = $member_data['phone_number'];
+        
+        $status_messages = [
+            'active' => 'Your membership has been activated. Welcome back!',
+            'suspended' => 'Your membership has been suspended. Please contact us.',
+            'banned' => 'Your membership has been terminated. Please contact administration.'
+        ];
+
+        $message = sprintf(
+            "Hi %s, your membership status changed to %s. %s",
+            $member_data['first_name'],
+            ucfirst($new_status),
+            $status_messages[$new_status] ?? 'Contact us for details.'
+        );
+
+        // Implement your SMS sending logic here
+        // This could be integration with SMS service like Twilio, Africa's Talking, etc.
+        error_log("SMS to {$phone}: {$message}");
     }
 
     // Handle guest update via AJAX
