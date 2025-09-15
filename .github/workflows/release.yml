@@ -1,0 +1,37 @@
+name: Build & Release Plugin
+
+on:
+  push:
+    tags:
+      - "v*" # Runs only when you push a version tag like v1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Install composer deps (needed for PUC autoloader)
+      - name: Install dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      # Build plugin ZIP (exclude GitHub workflow + dev files)
+      - name: Build plugin zip
+        run: |
+          mkdir build
+          zip -r build/vms-plugin.zip . \
+            -x "*.git*" \
+            -x "*/.github/*" \
+            -x "composer.json" \
+            -x "composer.lock"
+
+      # Upload ZIP as GitHub Release asset
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/vms-plugin.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

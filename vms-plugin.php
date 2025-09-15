@@ -3,7 +3,7 @@
  * Plugin Name: Visitor Management System Plugin
  * Plugin URI: https://github.com/Wyllymk/vms-plugin
  * Description: Integrate VMS Functionalities
- * Version: 1.0.1
+ * Version: 1.0.0
  * Author: Wyllymk
  * Author URI: https://wilsondevops.com
  * Text Domain: VMS
@@ -41,6 +41,8 @@ $myUpdateChecker = PucFactory::buildUpdateChecker(
 
 // Optional: if using GitHub releases/tags
 $myUpdateChecker->setBranch('main'); // or 'master' or whichever branch you use
+// Tell PUC to use the release asset (vms.zip) instead of auto-generated zips
+$myUpdateChecker->getVcsApi()->enableReleaseAssets();
 
 /**
  * Main plugin class
