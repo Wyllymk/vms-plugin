@@ -1,6 +1,6 @@
 <?php return array(
     'root' => array(
-        'name' => 'wylly/cyber-wakili-plugin',
+        'name' => 'wylly/wp-vms',
         'pretty_version' => '1.0.0',
         'version' => '1.0.0.0',
         'reference' => null,
@@ -19,24 +19,24 @@
             'aliases' => array(),
             'dev_requirement' => false,
         ),
-        'firebase/php-jwt' => array(
-            'pretty_version' => 'dev-main',
-            'version' => 'dev-main',
-            'reference' => '953b2c88bb445b7e3bb82a5141928f13d7343afd',
-            'type' => 'library',
-            'install_path' => __DIR__ . '/../firebase/php-jwt',
-            'aliases' => array(
-                0 => '9999999-dev',
-            ),
-            'dev_requirement' => false,
-        ),
-        'wylly/cyber-wakili-plugin' => array(
+        'wylly/wp-vms' => array(
             'pretty_version' => '1.0.0',
             'version' => '1.0.0.0',
             'reference' => null,
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'yahnis-elsts/plugin-update-checker' => array(
+            'pretty_version' => 'dev-master',
+            'version' => 'dev-master',
+            'reference' => '8add8143a274c47cafed48512e1259a2be859837',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../yahnis-elsts/plugin-update-checker',
+            'aliases' => array(
+                0 => '9999999-dev',
+            ),
             'dev_requirement' => false,
         ),
     ),

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d9ef4387e1d0e9e56bfc731b596c989f",
+    "content-hash": "d7a79780a293bf7dce449aa692b66995",
     "packages": [
         {
             "name": "cmb2/cmb2",
@@ -66,75 +66,62 @@
             "time": "2024-04-02T19:30:07+00:00"
         },
         {
-            "name": "firebase/php-jwt",
-            "version": "dev-main",
+            "name": "yahnis-elsts/plugin-update-checker",
+            "version": "dev-master",
             "source": {
                 "type": "git",
-                "url": "https://github.com/firebase/php-jwt.git",
-                "reference": "953b2c88bb445b7e3bb82a5141928f13d7343afd"
+                "url": "https://github.com/YahnisElsts/plugin-update-checker.git",
+                "reference": "8add8143a274c47cafed48512e1259a2be859837"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/firebase/php-jwt/zipball/953b2c88bb445b7e3bb82a5141928f13d7343afd",
-                "reference": "953b2c88bb445b7e3bb82a5141928f13d7343afd",
+                "url": "https://api.github.com/repos/YahnisElsts/plugin-update-checker/zipball/8add8143a274c47cafed48512e1259a2be859837",
+                "reference": "8add8143a274c47cafed48512e1259a2be859837",
                 "shasum": ""
             },
             "require": {
-                "php": "^8.0"
-            },
-            "require-dev": {
-                "guzzlehttp/guzzle": "^7.4",
-                "phpspec/prophecy-phpunit": "^2.0",
-                "phpunit/phpunit": "^9.5",
-                "psr/cache": "^2.0||^3.0",
-                "psr/http-client": "^1.0",
-                "psr/http-factory": "^1.0"
-            },
-            "suggest": {
-                "ext-sodium": "Support EdDSA (Ed25519) signatures",
-                "paragonie/sodium_compat": "Support EdDSA (Ed25519) signatures when libsodium is not present"
+                "ext-json": "*",
+                "php": ">=5.6.20"
             },
             "default-branch": true,
             "type": "library",
             "autoload": {
-                "psr-4": {
-                    "Firebase\\JWT\\": "src"
-                }
+                "files": [
+                    "load-v5p6.php"
+                ]
             },
             "notification-url": "https://packagist.org/downloads/",
             "license": [
-                "BSD-3-Clause"
+                "MIT"
             ],
             "authors": [
                 {
-                    "name": "Neuman Vong",
-                    "email": "neuman+pear@twilio.com",
-                    "role": "Developer"
-                },
-                {
-                    "name": "Anant Narayanan",
-                    "email": "anant@php.net",
+                    "name": "Yahnis Elsts",
+                    "email": "whiteshadow@w-shadow.com",
+                    "homepage": "https://w-shadow.com/",
                     "role": "Developer"
                 }
             ],
-            "description": "A simple library to encode and decode JSON Web Tokens (JWT) in PHP. Should conform to the current spec.",
-            "homepage": "https://github.com/firebase/php-jwt",
+            "description": "A custom update checker for WordPress plugins and themes. Useful if you can't host your plugin in the official WP repository but still want it to support automatic updates.",
+            "homepage": "https://github.com/YahnisElsts/plugin-update-checker/",
             "keywords": [
-                "jwt",
-                "php"
+                "automatic updates",
+                "plugin updates",
+                "theme updates",
+                "wordpress"
             ],
             "support": {
-                "issues": "https://github.com/firebase/php-jwt/issues",
-                "source": "https://github.com/firebase/php-jwt/tree/main"
+                "issues": "https://github.com/YahnisElsts/plugin-update-checker/issues",
+                "source": "https://github.com/YahnisElsts/plugin-update-checker/tree/master"
             },
-            "time": "2025-04-16T19:45:58+00:00"
+            "time": "2025-07-22T11:38:19+00:00"
         }
     ],
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
-        "firebase/php-jwt": 20
+        "yahnis-elsts/plugin-update-checker": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,

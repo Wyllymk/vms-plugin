@@ -20,7 +20,8 @@
   "minimum-stability": "dev",
   "require": {
     "php": ">=7.4",
-    "cmb2/cmb2": "^2.11"
+    "cmb2/cmb2": "^2.11",
+    "yahnis-elsts/plugin-update-checker": "dev-master"
   },
   "autoload": {
     "psr-4": {

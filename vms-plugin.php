@@ -29,6 +29,19 @@ define('VMS_PLUGIN_BASENAME', plugin_basename(__FILE__));
 // Load Composer Autoload
 require_once VMS_PLUGIN_DIR . 'vendor/autoload.php';
 
+require __DIR__ . '/vendor/autoload.php';
+
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+    'https://github.com/Wyllymk/vms-plugin', // GitHub repo URL
+    __FILE__, // Full path to main plugin file
+    'vms-plugin' // Plugin slug
+);
+
+// Optional: if using GitHub releases/tags
+$myUpdateChecker->setBranch('main'); // or 'master' or whichever branch you use
+
 /**
  * Main plugin class
  */
