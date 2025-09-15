@@ -3,8 +3,13 @@ Contributors: WyllyMk
 Donate link: https://wilsondevops.com/
 Tags: vms, visitors, management, system, wordpress
 Requires at least: 6.0
+<<<<<<< HEAD
 Tested up to: 6.8.2
 Stable tag: 1.0.0
+=======
+Tested up to: 6.5
+Stable tag: 1.0.1
+>>>>>>> 4a9f76fcf79a05835a8edb7faff9c33d530ec220
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -37,10 +42,16 @@ Yes. It uses standard WordPress APIs and can be extended by developers.
 
 == Screenshots ==
 
+<<<<<<< HEAD
 ## 📸 Screenshots
 ![Dashboard view](assets/screenshot-1.png)
 ![Guest sign-in](assets/screenshot-2.png)
 ![Host daily visitor limits](assets/screenshot-3.png)
+=======
+1. Dashboard view with visitor stats.
+2. Guest sign-in/sign-out workflow.
+3. Host daily visitor limits panel.
+>>>>>>> 4a9f76fcf79a05835a8edb7faff9c33d530ec220
 
 == Changelog ==
 
