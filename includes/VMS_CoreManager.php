@@ -73,20 +73,24 @@ class VMS_CoreManager
         // Hook the AJAX actions
         add_action( 'wp_ajax_vms_ajax_test_connection', [self::class, 'vms_ajax_test_connection'] );
         add_action( 'wp_ajax_vms_ajax_save_settings', [self::class, 'vms_ajax_save_settings'] );
-        add_action('wp_ajax_vms_ajax_refresh_balance', [self::class, 'vms_ajax_refresh_balance']);
+        add_action( 'wp_ajax_vms_ajax_refresh_balance', [self::class, 'vms_ajax_refresh_balance'] );
 
+        // User
         add_action('wp_ajax_change_user_password', [self::class, 'handle_change_user_password'] );
+        // Club
         add_action('wp_ajax_club_registration', [self::class, 'handle_club_registration'] );
         add_action('wp_ajax_get_club_data', [self::class, 'handle_get_club_data'] );
         add_action('wp_ajax_delete_club', [self::class, 'handle_delete_club'] );
         add_action('wp_ajax_club_update', [self::class, 'handle_club_update'] );
 
-        // Register AJAX handlers
+        // Reciprocating Member
         add_action('wp_ajax_reciprocating_member_registration', [self::class, 'handle_reciprocating_registration']);
         add_action('wp_ajax_reciprocating_member_sign_in', [self::class, 'handle_reciprocating_sign_in']);
         add_action('wp_ajax_reciprocating_member_sign_out', [self::class, 'handle_reciprocating_sign_out']);
 
+        // Employee
         add_action('wp_ajax_employee_registration', [self::class, 'handle_employee_registration']);
+        // Guest
         add_action('wp_ajax_guest_registration', [self::class, 'handle_guest_registration']);
         add_action('wp_ajax_courtesy_guest_registration', [self::class, 'handle_courtesy_guest_registration']);
         add_action('wp_ajax_update_guest', [self::class, 'handle_guest_update']);
@@ -835,13 +839,18 @@ class VMS_CoreManager
      * Handle guest sign in via AJAX - UPDATED with notifications
      */
     public static function handle_sign_in_guest(): void
-    {
+    {    
         self::verify_ajax_request();
 
-        $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
+        $visit_id  = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
+        $id_number = sanitize_text_field($_POST['id_number'] ?? '');
 
         if (!$visit_id) {
             wp_send_json_error(['messages' => ['Invalid visit ID']]);
+            return;
+        }
+        if (empty($id_number) || strlen($id_number) < 5) {
+            wp_send_json_error(['messages' => ['Valid ID number (min 5 digits) is required']]);
             return;
         }
 
@@ -849,9 +858,9 @@ class VMS_CoreManager
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
-        // Get visit and guest data
+        // Get visit and guest data (include id_number check)
         $visit = $wpdb->get_row($wpdb->prepare(
-            "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails, g.guest_status
+            "SELECT gv.*, g.id_number, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails, g.guest_status
             FROM {$guest_visits_table} gv
             LEFT JOIN {$guests_table} g ON g.id = gv.guest_id
             WHERE gv.id = %d",
@@ -860,6 +869,12 @@ class VMS_CoreManager
 
         if (!$visit) {
             wp_send_json_error(['messages' => ['Visit not found']]);
+            return;
+        }
+
+        // Validate ID number matches
+        if ($visit->id_number !== $id_number) {
+            wp_send_json_error(['messages' => ['ID number does not match our records']]);
             return;
         }
 
@@ -936,6 +951,7 @@ class VMS_CoreManager
             'guestData' => $guest_data_response
         ]);
     }
+
 
     /**
      * Handle guest sign out via AJAX - UPDATED with notifications
@@ -1515,7 +1531,7 @@ class VMS_CoreManager
             : 'the scheduled date';
 
         // Start message
-        $message = "Nyeri Club: Dear {$first_name}, your visit scheduled for {$formatted_date} has been cancelled.";
+        $message = "Dear {$first_name}, your visit scheduled for {$formatted_date} has been cancelled.";
 
         // Add host info if available
         if (!empty($visit_data['host_member_id'])) {
@@ -1608,7 +1624,7 @@ class VMS_CoreManager
         error_log("SMS Triggered: Guest status changed from {$old_status} to {$new_status} for guest ID {$guest_id}");
 
         // Base message
-        $message = "Nyeri Club: Dear {$first_name}, ";
+        $message = "Dear {$first_name}, ";
 
         switch ($new_status) {
             case 'suspended':
@@ -2793,7 +2809,7 @@ class VMS_CoreManager
             'messages'  => ['Guest registered successfully'],
             'guestData' => $guest_data
         ]);
-    }
+    }   
 
     /**
      * Handle employee registration via AJAX - UPDATED WITH EMAIL & SMS NOTIFICATIONS
@@ -3656,7 +3672,7 @@ class VMS_CoreManager
 
         // Send SMS to member if opted in
         if ($member_receive_messages === 'yes' && !empty($member_phone)) {
-            $member_message = "Nyeri Club: Dear " . $first_name . ",\nYour reciprocating member visit on $formatted_date is $status_text.";
+            $member_message = "Dear " . $first_name . ",\nYour reciprocating member visit on $formatted_date is $status_text.";
             $role = 'reciprocating_member';
             
             if ($status === 'approved') {
@@ -3678,7 +3694,7 @@ class VMS_CoreManager
             $admin_first_name = get_user_meta($admin->ID, 'first_name', true);
 
             if ($admin_receive_messages === 'yes' && !empty($admin_phone)) {
-                $admin_message = "Nyeri Club: Dear " . $admin_first_name . ",\nReciprocating member $first_name $last_name has registered for $formatted_date. Status: $status_text.";
+                $admin_message = "Dear " . $admin_first_name . ",\nReciprocating member $first_name $last_name has registered for $formatted_date. Status: $status_text.";
                 
                 if ($status !== 'approved') {
                     $admin_message .= " Requires approval due to limits.";
@@ -3765,10 +3781,10 @@ class VMS_CoreManager
 
         // Send SMS to guest if opted in
         if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
-            $guest_message = "Nyeri Club: Dear " . $first_name . ",\nYour visit on $formatted_date with host $host_first_name $host_last_name is $status_text.";
+            $guest_message = "Dear " . $first_name . ",\nYou have been booked as a visitor at Nyeri Club by " . $host_first_name . " " . $host_last_name . ". Your visit registered for $formatted_date is $status_text.";
             $role = 'guest';
             if ($status === 'approved') {
-                $guest_message .= " Please carry a valid ID.";
+                $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
             } else {
                 $guest_message .= " You will be notified once approved.";
             }
@@ -3785,7 +3801,7 @@ class VMS_CoreManager
             $role                  = !empty($roles) ? $roles[0] : 'member';
 
             if ($host_receive_messages === 'yes' && !empty($host_phone)) {
-                $host_message = "Nyeri Club: Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
+                $host_message = "Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
                 if ($status === 'approved') {
                     $host_message .= " Please be available to receive them.";
                 } else {
@@ -3873,14 +3889,12 @@ class VMS_CoreManager
         $formatted_date = date('F j, Y', strtotime($visit_date));
         $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
 
-        // Send SMS to courtesy guest if opted in
+        // Send SMS to courtesy guest if opted in       
         if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
+            $guest_message = "Dear " . $first_name . ",\nYou have been booked as a visitor at Nyeri Club. Your visit registered for $formatted_date is $status_text.";
             $role = 'guest';
-            $guest_message  = "Nyeri Club: Dear {$first_name},\n";
-            $guest_message .= "Your courtesy visit on {$formatted_date} is {$status_text}.";
-
             if ($status === 'approved') {
-                $guest_message .= " Please carry a valid ID.";
+                $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
             } else {
                 $guest_message .= " You will be notified once approved.";
             }
@@ -3910,7 +3924,7 @@ class VMS_CoreManager
             $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
             
             if ($status === 'approved') {
-                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
+                $guest_message .= "Your visit has been approved. Please present a valid ID or Passport when you arrive.\n\n";
             } else {
                 $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
             }
@@ -3950,28 +3964,42 @@ class VMS_CoreManager
             return;
         }
 
-        $formatted_date = date('F j, Y', strtotime($visit_date));
-        $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
-        $role           = 'guest';
+        $formatted_date  = date('F j, Y', strtotime($visit_date));
+        $status_text     = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+        $role            = 'guest';
+        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
+        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
 
-        $guest_message  = "Nyeri Club: Dear {$first_name},\n";
-        $guest_message .= "Your visit on {$formatted_date} is {$status_text}.";
-
-        if ($host_member) {
-            $host_name = trim(get_user_meta($host_member->ID, 'first_name', true) . ' ' . get_user_meta($host_member->ID, 'last_name', true));
-            if (!$host_name) {
-                $host_name = $host_member->user_login;
-            }
-            $guest_message .= " Hosted by {$host_name}.";
-        }
-
+        
+        $guest_message = "Dear " . $first_name . ",\nYou have been booked as a visitor at Nyeri Club by " . $host_first_name . " " . $host_last_name . ". Your visit registered for $formatted_date is $status_text.";
+        $role = 'guest';
         if ($status === 'approved') {
-            $guest_message .= " Please carry a valid ID.";
+            $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
         } else {
             $guest_message .= " You will be notified once approved.";
         }
 
-        VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id, $role);
+        VMS_NotificationManager::send_sms($guest_phone, $guest_message, $guest_id, $role);        
+
+         // Send SMS to host if opted in
+        if ($host_member) {
+            $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
+            $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
+            $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
+            $roles                 = $host_member->roles ?? [];
+            $role                  = !empty($roles) ? $roles[0] : 'member';
+
+            if ($host_receive_messages === 'yes' && !empty($host_phone)) {
+                $host_message = "Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
+                if ($status === 'approved') {
+                    $host_message .= " Please be available to receive them.";
+                } else {
+                    $host_message .= " Pending approval due to limits.";
+                }
+
+                VMS_NotificationManager::send_sms($host_phone, $host_message, $host_member->ID, $role);
+            }
+        }
     }
 
     /**

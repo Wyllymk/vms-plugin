@@ -183,7 +183,7 @@ class VMS_NotificationManager
             return null;
         }
 
-        $message = "Nyeri Club: Dear {$name}, ";
+        $message = "Dear {$name}, ";
         
         switch ($new_status) {
             case 'suspended':
@@ -271,7 +271,7 @@ class VMS_NotificationManager
         }
 
         $formatted_date = date('F j, Y', strtotime($visit_date));
-        $message = "Nyeri Club: Dear {$name}, you have exceeded your daily guest limit (4) for {$formatted_date}. ";
+        $message = "Dear {$name}, you have exceeded your daily guest limit (4) for {$formatted_date}. ";
         $message .= "{$unapproved_count} guest(s) are pending approval and will be notified once slots become available.";
         
         return self::send_sms($phone, $message, $host_data['user_id'], $role);
@@ -292,7 +292,7 @@ class VMS_NotificationManager
             return null;
         }
 
-        $message = "Nyeri Club: Welcome {$name}! You have successfully signed in at {$signin_time}. Enjoy your visit!";
+        $message = "Welcome {$name}! You have successfully signed in at {$signin_time}. Enjoy your visit!";
         
         return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
@@ -312,7 +312,7 @@ class VMS_NotificationManager
             return null;
         }
 
-        $message = "Nyeri Club: Thank you for your visit {$name}! You have successfully signed out at {$signout_time}. Have a great day!";
+        $message = "Thank you for your visit {$name}! You have successfully signed out at {$signout_time}. Have a great day!";
         
         return self::send_sms($phone, $message, $guest_data['user_id'] ?? null, $role);
     }
