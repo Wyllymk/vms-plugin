@@ -5,30 +5,49 @@ on:
     tags:
       - "v*" # Runs only when you push a version tag like v1.0.0
 
+permissions:
+  contents: write # ✅ Required for creating releases with GITHUB_TOKEN
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout code
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Install composer deps (needed for PUC autoloader)
+      # 2. Set up PHP (so Composer works properly)
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.1" # Match your plugin's minimum PHP version
+          tools: composer
+
+      # 3. Install composer dependencies (required for PUC autoloader)
       - name: Install dependencies
         run: composer install --no-dev --optimize-autoloader
 
-      # Build plugin ZIP (exclude GitHub workflow + dev files)
+      # 4. Prepare build folder (copy plugin files except excluded ones)
+      - name: Prepare build
+        run: |
+          mkdir -p build/vms-plugin
+          rsync -av ./ build/vms-plugin/ \
+            --exclude build \
+            --exclude .git \
+            --exclude .github \
+            --exclude composer.json \
+            --exclude composer.lock \
+            --exclude node_modules \
+            --exclude tests
+
+      # 5. Create plugin zip
       - name: Build plugin zip
         run: |
-          mkdir build
-          zip -r build/vms-plugin.zip . \
-            -x "*.git*" \
-            -x "*/.github/*" \
-            -x "composer.json" \
-            -x "composer.lock"
+          cd build
+          zip -r vms-plugin.zip vms-plugin
 
-      # Upload ZIP as GitHub Release asset
+      # 6. Create GitHub Release and upload the built ZIP
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:

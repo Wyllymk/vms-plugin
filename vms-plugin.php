@@ -3,7 +3,7 @@
  * Plugin Name: Visitor Management System Plugin
  * Plugin URI: https://github.com/Wyllymk/vms-plugin
  * Description: Integrate VMS Functionalities
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Wyllymk
  * Author URI: https://wilsondevops.com
  * Text Domain: VMS

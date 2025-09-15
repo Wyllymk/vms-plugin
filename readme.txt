@@ -42,16 +42,10 @@ Yes. It uses standard WordPress APIs and can be extended by developers.
 
 == Screenshots ==
 
-<<<<<<< HEAD
 ## 📸 Screenshots
 ![Dashboard view](assets/screenshot-1.png)
 ![Guest sign-in](assets/screenshot-2.png)
 ![Host daily visitor limits](assets/screenshot-3.png)
-=======
-1. Dashboard view with visitor stats.
-2. Guest sign-in/sign-out workflow.
-3. Host daily visitor limits panel.
->>>>>>> 4a9f76fcf79a05835a8edb7faff9c33d530ec220
 
 == Changelog ==
 
