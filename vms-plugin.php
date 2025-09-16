@@ -96,10 +96,9 @@ final class VMS_Plugin
         VMS_CoreManager::get_instance()->init();
         VMS_NotificationManager::get_instance()->init();
         VMS_FormHandler::get_instance()->init();
-        VMS_CPTS::get_instance()->init();
         VMS_Roles::get_instance()->init();
-        VMS_RestApiManager::get_instance()->init();
-        VMS_Database::get_instance()->init();
+        // VMS_RestApiManager::get_instance()->init();
+        // VMS_Database::get_instance()->init();
     }
 }
 

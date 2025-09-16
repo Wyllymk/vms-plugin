@@ -1,6 +1,6 @@
 <?php
 /**
- * Handles all Cyber Wakili custom roles and capabilities
+ * Handles all VMS custom roles and capabilities
  * 
  * @package WyllyMk\VMS
  * @since 1.0.0
@@ -54,13 +54,7 @@ class VMS_Roles
             'capabilities' => [
                 'read' => true,               
             ]
-        ],
-        'guest' => [
-            'name' => 'Guest',
-            'capabilities' => [
-                'read' => true,
-            ]
-        ]
+        ]        
     ];
 
     /**

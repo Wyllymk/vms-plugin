@@ -114,23 +114,24 @@ class VMS_Activation
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
             email VARCHAR(255) DEFAULT NULL,
-            phone_number VARCHAR(20) DEFAULT NULL,
-            id_number VARCHAR(100) NOT NULL,
+            phone_number VARCHAR(20) NOT NULL,
+            id_number VARCHAR(100) DEFAULT NULL,
             guest_status ENUM('active','suspended','banned') DEFAULT 'active',
             receive_emails ENUM('yes','no') DEFAULT 'no',
             receive_messages ENUM('yes','no') DEFAULT 'no',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
+            UNIQUE KEY unique_phone_number (phone_number),
             UNIQUE KEY unique_id_number (id_number),
-            KEY email (email),
-            KEY phone_number (phone_number),           
+            KEY email (email),           
             KEY guest_status (guest_status)
         ) ENGINE=InnoDB $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
     }
+
 
     private static function create_guest_visits_table(): void
     {

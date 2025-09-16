@@ -874,9 +874,24 @@ class VMS_CoreManager
 
         // Validate ID number matches
         if ($visit->id_number !== $id_number) {
-            wp_send_json_error(['messages' => ['ID number does not match our records']]);
-            return;
+            // Instead of throwing error, update the id_number in guests table
+            $updated = $wpdb->update(
+                $guests_table,
+                ['id_number' => $id_number],
+                ['id' => $visit->guest_id],
+                ['%s'],
+                ['%d']
+            );
+
+            if ($updated === false) {
+                wp_send_json_error(['messages' => ['Failed to update ID number']]);
+                return;
+            }
+
+            // Also update the $visit object so we can use it later in notifications
+            $visit->id_number = $id_number;
         }
+
 
         if (!empty($visit->sign_in_time)) {
             wp_send_json_error(['messages' => ['Guest already signed in']]);
@@ -943,7 +958,8 @@ class VMS_CoreManager
             'first_name' => $visit->first_name,
             'last_name' => $visit->last_name,
             'sign_in_time' => $signin_time,
-            'visit_id' => $visit_id
+            'visit_id' => $visit_id,
+            'id_number' => $visit->id_number
         ];
 
         wp_send_json_success([
@@ -2576,9 +2592,7 @@ class VMS_CoreManager
         // Sanitize input
         $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
         $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
-        $email            = sanitize_email($_POST['email'] ?? '');
         $phone_number     = sanitize_text_field($_POST['phone_number'] ?? '');
-        $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
         $host_member_id   = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
         $visit_date       = sanitize_text_field($_POST['visit_date'] ?? '');
         $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
@@ -2587,9 +2601,7 @@ class VMS_CoreManager
         // Validate required fields
         if (empty($first_name)) $errors[] = 'First name is required';
         if (empty($last_name)) $errors[] = 'Last name is required';
-        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
         if (empty($phone_number)) $errors[] = 'Phone number is required';
-        if (empty($id_number)) $errors[] = 'ID number is required';
         if (empty($host_member_id)) $errors[] = 'Host member is required';
 
         // Validate visit date format
@@ -2618,29 +2630,29 @@ class VMS_CoreManager
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
-        // Check if guest already exists by ID number
+        // Check if guest exists by phone number
         $existing_guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, guest_status FROM $guests_table WHERE id_number = %s",
-            $id_number
+            "SELECT id, guest_status FROM $guests_table WHERE phone_number = %s",
+            $phone_number
         ));
 
         if ($existing_guest) {
             $guest_id = $existing_guest->id;
             // Update guest info (excluding guest_status)
-            $wpdb->update(
-                $guests_table,
-                [
-                    'first_name'       => $first_name,
-                    'last_name'        => $last_name,
-                    'email'            => $email,
-                    'phone_number'     => $phone_number,
-                    'receive_emails'   => $receive_emails,
-                    'receive_messages' => $receive_messages,
-                ],
-                ['id' => $guest_id],
-                ['%s', '%s', '%s', '%s', '%s', '%s'],
-                ['%d']
-            );
+            // $wpdb->update(
+            //     $guests_table,
+            //     [
+            //         'first_name'       => $first_name,
+            //         'last_name'        => $last_name,
+            //         'email'            => $email,
+            //         'phone_number'     => $phone_number,
+            //         'receive_emails'   => $receive_emails,
+            //         'receive_messages' => $receive_messages,
+            //     ],
+            //     ['id' => $guest_id],
+            //     ['%s', '%s', '%s', '%s', '%s', '%s'],
+            //     ['%d']
+            // );
         } else {
             // Create new guest
             $wpdb->insert(
@@ -2648,9 +2660,7 @@ class VMS_CoreManager
                 [
                     'first_name'       => $first_name,
                     'last_name'        => $last_name,
-                    'email'            => $email,
                     'phone_number'     => $phone_number,
-                    'id_number'        => $id_number,
                     'receive_emails'   => $receive_emails,
                     'receive_messages' => $receive_messages,                   
                     'guest_status'     => 'active'
@@ -2761,18 +2771,6 @@ class VMS_CoreManager
             "SELECT guest_status FROM $guests_table WHERE id = %d",
             $guest_id
         ));
-
-        // Send email notifications
-        self::send_guest_registration_emails(
-            $guest_id,
-            $first_name,
-            $last_name,
-            $email,
-            $receive_emails,
-            $host_member,
-            $visit_date,
-            $preliminary_status
-        );
         
         // Send SMS notifications
         self::send_guest_registration_sms(
@@ -2790,9 +2788,7 @@ class VMS_CoreManager
             'id'              => $guest_id,
             'first_name'      => $first_name,
             'last_name'       => $last_name,
-            'email'           => $email,
             'phone_number'    => $phone_number,
-            'id_number'       => $id_number,
             'host_member_id'  => $host_member_id,
             'host_name'       => $host_member ? $host_member->display_name : 'N/A',
             'visit_date'      => $visit_date,
@@ -2809,7 +2805,7 @@ class VMS_CoreManager
             'messages'  => ['Guest registered successfully'],
             'guestData' => $guest_data
         ]);
-    }   
+    }
 
     /**
      * Handle employee registration via AJAX - UPDATED WITH EMAIL & SMS NOTIFICATIONS
@@ -3047,20 +3043,14 @@ class VMS_CoreManager
         // Sanitize input
         $first_name       = sanitize_text_field($_POST['first_name'] ?? '');
         $last_name        = sanitize_text_field($_POST['last_name'] ?? '');
-        $email            = sanitize_email($_POST['email'] ?? '');
         $phone_number     = sanitize_text_field($_POST['phone_number'] ?? '');
-        $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
         $visit_date       = sanitize_text_field($_POST['visit_date'] ?? '');
-        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
-        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
         $courtesy         = 'Courtesy';
 
         // Validate required fields
         if (empty($first_name)) $errors[] = 'First name is required';
         if (empty($last_name)) $errors[] = 'Last name is required';
-        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
         if (empty($phone_number)) $errors[] = 'Phone number is required';
-        if (empty($id_number)) $errors[] = 'ID number is required';
 
         // Validate visit date format
         if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
@@ -3082,29 +3072,29 @@ class VMS_CoreManager
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
 
-        // Check if guest already exists by ID number
+        // Check if guest exists by phone number
         $existing_guest = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, guest_status FROM $guests_table WHERE id_number = %s",
-            $id_number
+            "SELECT id, guest_status FROM $guests_table WHERE phone_number = %s",
+            $phone_number
         ));
 
         if ($existing_guest) {
             $guest_id = $existing_guest->id;
             // Update guest info (excluding guest_status)
-            $wpdb->update(
-                $guests_table,
-                [
-                    'first_name'       => $first_name,
-                    'last_name'        => $last_name,
-                    'email'            => $email,
-                    'phone_number'     => $phone_number,
-                    'receive_emails'   => $receive_emails,
-                    'receive_messages' => $receive_messages,
-                ],
-                ['id' => $guest_id],
-                ['%s', '%s', '%s', '%s', '%s', '%s'],
-                ['%d']
-            );
+            // $wpdb->update(
+            //     $guests_table,
+            //     [
+            //         'first_name'       => $first_name,
+            //         'last_name'        => $last_name,
+            //         'email'            => $email,
+            //         'phone_number'     => $phone_number,
+            //         'receive_emails'   => $receive_emails,
+            //         'receive_messages' => $receive_messages,
+            //     ],
+            //     ['id' => $guest_id],
+            //     ['%s', '%s', '%s', '%s', '%s', '%s'],
+            //     ['%d']
+            // );
         } else {
             // Create new guest
             $wpdb->insert(
@@ -3112,11 +3102,9 @@ class VMS_CoreManager
                 [
                     'first_name'       => $first_name,
                     'last_name'        => $last_name,
-                    'email'            => $email,
                     'phone_number'     => $phone_number,
-                    'id_number'        => $id_number,
-                    'receive_emails'   => $receive_emails,
-                    'receive_messages' => $receive_messages,                   
+                    'receive_emails'   => 'yes',
+                    'receive_messages' => 'yes',                   
                     'guest_status'     => 'active'
                 ],
                 ['%s','%s','%s','%s','%s','%s','%s','%s']
@@ -3165,17 +3153,6 @@ class VMS_CoreManager
             $guest_id
         ));
 
-        // Send email notifications for courtesy guest (no host)
-        self::send_courtesy_guest_registration_emails(
-            $guest_id,
-            $first_name,
-            $last_name,
-            $email,
-            $receive_emails,
-            $visit_date,
-            $preliminary_status
-        );
-
         // Send SMS notifications
         self::send_courtesy_guest_registration_sms(
             $guest_id,
@@ -3186,16 +3163,13 @@ class VMS_CoreManager
             $visit_date,
             $preliminary_status
         );
-
         
         // Prepare guest data for JS
         $guest_data = [
             'id'              => $guest_id,
             'first_name'      => $first_name,
             'last_name'       => $last_name,
-            'email'           => $email,
             'phone_number'    => $phone_number,
-            'id_number'       => $id_number,
             'visit_date'      => $visit_date,
             'courtesy'        => $courtesy,
             'receive_emails'  => $receive_emails,
@@ -3812,74 +3786,6 @@ class VMS_CoreManager
             }
         }
     }
-
-    /**
-     * Send email notifications for guest registration with host
-     */
-    private static function send_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $host_member, $visit_date, $status)
-    {
-        $formatted_date = date('F j, Y', strtotime($visit_date));
-        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
-        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
-        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
-
-        // Send email to guest if they opted in
-        if ($guest_receive_emails === 'yes') {
-            $guest_subject = 'Visit Registration Confirmation - Nyeri Club';
-            
-            $guest_message = "Dear " . $first_name . ",\n\n";
-            $guest_message .= "Your visit to Nyeri Club has been registered successfully.\n\n";
-            $guest_message .= "Visit Details:\n";
-            $guest_message .= "Date: " . $formatted_date . "\n";
-            $guest_message .= "Host: " . $host_first_name . " " . $host_last_name . "\n";
-            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
-            
-            if ($status === 'approved') {
-                $guest_message .= "Your visit has been approved. Please present a valid ID when you arrive.\n\n";
-            } else {
-                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
-            }
-            
-            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
-            $guest_message .= "Best regards,\n";
-            $guest_message .= "Nyeri Club Visitor Management System";
-
-            error_log($guest_message);
-
-            wp_mail($guest_email, $guest_subject, $guest_message);
-        }
-
-        // Send email to host if they opted in to receive emails
-        if ($host_member) {
-            $host_receive_emails = get_user_meta($host_member->ID, 'receive_emails', true);
-            $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
-            $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);            
-            
-            if ($host_receive_emails === 'yes') {
-                $host_subject = 'New Guest Registration - Nyeri Club';
-                
-                $host_message = "Dear " . $host_first_name . " " . $host_last_name . ",\n\n";
-                $host_message .= "A guest has registered for a visit with you as their host.\n\n";
-                $host_message .= "Guest Details:\n";
-                $host_message .= "Name: " . $first_name . " " . $last_name . "\n";
-                $host_message .= "Visit Date: " . $formatted_date . "\n";
-                $host_message .= "Status: " . ucfirst($status_text) . "\n\n";
-                
-                if ($status === 'approved') {
-                    $host_message .= "The visit has been approved. Please ensure you are available to receive your guest.\n\n";
-                } else {
-                    $host_message .= "The visit is pending approval due to capacity limits.\n\n";
-                }
-                
-                $host_message .= "Best regards,\n";
-                $host_message .= "Nyeri Club Visitor Management System";
-
-                error_log($host_message);
-
-                wp_mail($host_member->user_email, $host_subject, $host_message);
-            }
-        }
-    }
     
     /**
      * Send SMS notifications for courtesy guest registration (no host involved)
@@ -3903,60 +3809,6 @@ class VMS_CoreManager
         }
     }
 
-
-    /**
-     * Send email notifications for courtesy guest registration (no host)
-     */
-    private static function send_courtesy_guest_registration_emails($guest_id, $first_name, $last_name, $guest_email, $guest_receive_emails, $visit_date, $status)
-    {
-        $formatted_date = date('F j, Y', strtotime($visit_date));
-        $status_text = ($status === 'approved') ? 'approved' : 'pending approval';
-
-        // Send email to guest if they opted in
-        if ($guest_receive_emails === 'yes') {
-            $guest_subject = 'Courtesy Visit Registration Confirmation - Nyeri Club';
-            
-            $guest_message = "Dear " . $first_name . ",\n\n";
-            $guest_message .= "Your courtesy visit to Nyeri Club has been registered successfully.\n\n";
-            $guest_message .= "Visit Details:\n";
-            $guest_message .= "Date: " . $formatted_date . "\n";
-            $guest_message .= "Type: Courtesy Visit\n";
-            $guest_message .= "Status: " . ucfirst($status_text) . "\n\n";
-            
-            if ($status === 'approved') {
-                $guest_message .= "Your visit has been approved. Please present a valid ID or Passport when you arrive.\n\n";
-            } else {
-                $guest_message .= "Your visit is currently pending approval. You will receive another email once approved.\n\n";
-            }
-            
-            $guest_message .= "Thank you for choosing Nyeri Club.\n\n";
-            $guest_message .= "Best regards,\n";
-            $guest_message .= "Nyeri Club Visitor Management System";
-
-            error_log($guest_message);
-
-            wp_mail($guest_email, $guest_subject, $guest_message);
-        }
-
-        // Send email to admin for courtesy visits
-        $admin_email = get_option('admin_email');
-        $admin_subject = 'New Courtesy Guest Registration - Nyeri Club';
-        
-        $admin_message = "Hello Admin,\n\n";
-        $admin_message .= "A new courtesy guest has registered:\n\n";
-        $admin_message .= "Guest Details:\n";
-        $admin_message .= "Name: " . $first_name . " " . $last_name . "\n";
-        $admin_message .= "Email: " . $guest_email . "\n";
-        $admin_message .= "Visit Date: " . $formatted_date . "\n";
-        $admin_message .= "Type: Courtesy Visit\n";
-        $admin_message .= "Status: " . ucfirst($status_text) . "\n\n";
-        $admin_message .= "Please review this registration in the system.\n\n";
-        $admin_message .= "Nyeri Club Visitor Management System";
-
-        error_log($admin_message);
-
-        wp_mail($admin_email, $admin_subject, $admin_message);
-    }
 
     private static function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
     {
@@ -4457,9 +4309,9 @@ class VMS_CoreManager
         if (empty($guest_id)) $errors[] = 'Guest ID is required';
         if (empty($first_name)) $errors[] = 'First name is required';
         if (empty($last_name)) $errors[] = 'Last name is required';
-        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        // if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
         if (empty($phone_number)) $errors[] = 'Phone number is required';
-        if (empty($id_number)) $errors[] = 'ID number is required';
+        // if (empty($id_number)) $errors[] = 'ID number is required';
 
         if (!empty($errors)) {
             wp_send_json_error(['messages' => $errors]);
