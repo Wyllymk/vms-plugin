@@ -4887,7 +4887,7 @@ class VMS_CoreManager
             // Update guest status if needed
             $wpdb->update(
                 $guests_table,
-                ['status' => $guest_status],
+                ['guest_status' => $guest_status], 
                 ['id' => $visit->guest_id],
                 ['%s'],
                 ['%d']
