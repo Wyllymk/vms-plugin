@@ -50,7 +50,12 @@ class VMS_CoreManager
      */
     private function setup_authentication_hooks(): void
     {
-        add_action('login_init', [self::class, 'handle_custom_login_redirect']);
+        add_action( 'login_form_lostpassword', [ self::class, 'handle_custom_login_redirect' ] );
+        add_action( 'login_form_rp', [ self::class, 'handle_custom_login_redirect' ] );
+        add_action( 'login_form_resetpass', [ self::class, 'handle_custom_login_redirect' ] );
+        add_action( 'login_form_register', [ self::class, 'handle_custom_login_redirect' ] );
+        add_action( 'login_form_login', [ self::class, 'handle_custom_login_redirect' ] );
+
         add_filter('login_redirect', [self::class, 'custom_login_redirect'], 10, 3);
         add_filter('wp_authenticate_user', [self::class, 'validate_user_status'], 10, 1);
         add_filter('retrieve_password_message', [self::class, 'custom_password_reset_email'], 10, 4);
