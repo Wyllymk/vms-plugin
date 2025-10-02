@@ -156,19 +156,27 @@ class VMS_CoreManager
         switch ( $action ) {
             case 'lostpassword':
                 wp_redirect( site_url( '/lost-password' ) );
-                exit;
-
-            case 'rp':
-            case 'resetpass':
-                if ( isset($_GET['key'], $_GET['login']) ) {
-                    wp_redirect( site_url( '/password-reset/?key=' . urlencode($_GET['key']) . '&login=' . urlencode($_GET['login']) ) );
-                    exit;
-                }
-                break;
+                exit;            
 
             case 'register':
                 wp_redirect( site_url( '/register' ) );
                 exit;
+
+            case 'rp':
+            case 'resetpass':
+                $key   = $_REQUEST['key']   ?? '';
+                $login = $_REQUEST['login'] ?? '';
+
+                // Decode HTML entities like &#038; to plain &
+                $key   = html_entity_decode( $key );
+                $login = html_entity_decode( $login );
+
+                if ( $key && $login ) {
+                    $url = site_url( '/password-reset/?key=' . rawurlencode( $key ) . '&login=' . rawurlencode( $login ) );
+                    wp_redirect( $url );
+                    exit;
+                }
+                break;
 
             case 'login':
             case '':
@@ -841,7 +849,7 @@ class VMS_CoreManager
     }
 
     /**
-     * Handle guest sign in via AJAX - UPDATED with notifications
+     * Handle guest sign in via AJAX - UPDATED with strict ID number rules
      */
     public static function handle_sign_in_guest(): void
     {    
@@ -861,9 +869,9 @@ class VMS_CoreManager
 
         global $wpdb;
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guests_table       = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
 
-        // Get visit and guest data (include id_number check)
+        // Get visit and guest data
         $visit = $wpdb->get_row($wpdb->prepare(
             "SELECT gv.*, g.id_number, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails, g.guest_status
             FROM {$guest_visits_table} gv
@@ -877,9 +885,26 @@ class VMS_CoreManager
             return;
         }
 
-        // Validate ID number matches
-        if ($visit->id_number !== $id_number) {
-            // Instead of throwing error, update the id_number in guests table
+        // ✅ ID number validation logic
+        if (!empty($visit->id_number)) {
+            // If guest already has an ID number, it MUST match
+            if ($visit->id_number !== $id_number) {
+                wp_send_json_error(['messages' => ['ID number does not match the registered guest record']]);
+                return;
+            }
+        } else {
+            // If guest has no ID yet, check if this ID belongs to someone else
+            $existing = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$guests_table} WHERE id_number = %s",
+                $id_number
+            ));
+
+            if ($existing > 0) {
+                wp_send_json_error(['messages' => ['This ID number is already registered with another guest']]);
+                return;
+            }
+
+            // Safe to save since it's unique
             $updated = $wpdb->update(
                 $guests_table,
                 ['id_number' => $id_number],
@@ -889,14 +914,12 @@ class VMS_CoreManager
             );
 
             if ($updated === false) {
-                wp_send_json_error(['messages' => ['Failed to update ID number']]);
+                wp_send_json_error(['messages' => ['Failed to save ID number']]);
                 return;
             }
 
-            // Also update the $visit object so we can use it later in notifications
-            $visit->id_number = $id_number;
+            $visit->id_number = $id_number; // update local object
         }
-
 
         if (!empty($visit->sign_in_time)) {
             wp_send_json_error(['messages' => ['Guest already signed in']]);
@@ -911,7 +934,7 @@ class VMS_CoreManager
 
         // Check visit date
         $current_date = current_time('Y-m-d');
-        $visit_date = date('Y-m-d', strtotime($visit->visit_date));
+        $visit_date   = date('Y-m-d', strtotime($visit->visit_date));
         
         if ($visit_date !== $current_date) {
             wp_send_json_error(['messages' => ['Guest can only sign in on their scheduled visit date']]);
@@ -936,43 +959,41 @@ class VMS_CoreManager
 
         // Send sign-in notifications
         $guest_data = [
-            'first_name' => $visit->first_name,
-            'phone_number' => $visit->phone_number,
-            'email' => $visit->email,
+            'first_name'       => $visit->first_name,
+            'phone_number'     => $visit->phone_number,
+            'email'            => $visit->email,
             'receive_messages' => $visit->receive_messages,
-            'receive_emails' => $visit->receive_emails,
-            'user_id' => $visit->guest_id
+            'receive_emails'   => $visit->receive_emails,
+            'user_id'          => $visit->guest_id
         ];
 
         $visit_data = [
             'sign_in_time' => $signin_time,
-            'visit_date' => $visit->visit_date
+            'visit_date'   => $visit->visit_date
         ];
 
-        // Send SMS and email notifications
         VMS_NotificationManager::get_instance()->send_signin_notification($guest_data, $visit_data);
         self::send_signin_email_notification($guest_data, $visit_data);
 
         // Fetch host member name
         $host_member = get_user_by('id', $visit->host_member_id);
-        $host_name = $host_member ? $host_member->display_name : 'N/A';
+        $host_name   = $host_member ? $host_member->display_name : 'N/A';
 
         // Prepare response data
         $guest_data_response = [
-            'id' => $visit->guest_id,
-            'first_name' => $visit->first_name,
-            'last_name' => $visit->last_name,
-            'sign_in_time' => $signin_time,
-            'visit_id' => $visit_id,
-            'id_number' => $visit->id_number
+            'id'          => $visit->guest_id,
+            'first_name'  => $visit->first_name,
+            'last_name'   => $visit->last_name,
+            'sign_in_time'=> $signin_time,
+            'visit_id'    => $visit_id,
+            'id_number'   => $visit->id_number
         ];
 
         wp_send_json_success([
-            'messages' => ['Guest signed in successfully'],
+            'messages'  => ['Guest signed in successfully'],
             'guestData' => $guest_data_response
         ]);
     }
-
 
     /**
      * Handle guest sign out via AJAX - UPDATED with notifications
