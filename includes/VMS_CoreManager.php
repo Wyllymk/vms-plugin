@@ -92,6 +92,8 @@ class VMS_CoreManager
         add_action('wp_ajax_reciprocating_member_registration', [self::class, 'handle_reciprocating_registration']);
         add_action('wp_ajax_reciprocating_member_sign_in', [self::class, 'handle_reciprocating_sign_in']);
         add_action('wp_ajax_reciprocating_member_sign_out', [self::class, 'handle_reciprocating_sign_out']);
+        add_action('auto_sign_out_recip_members_at_midnight', [self::class, 'auto_sign_out_recip_members']);
+
 
         // Employee
         add_action('wp_ajax_employee_registration', [self::class, 'handle_employee_registration']);
@@ -4717,55 +4719,110 @@ class VMS_CoreManager
     }
 
     /**
+     * Automatically sign out reciprocating members at midnight
+     */
+    public static function auto_sign_out_recip_members()
+    {
+        global $wpdb;
+        error_log('Auto sign out recip members');
+        
+        $recip_visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
+        
+        // Get yesterday's date (day that just ended)
+        $yesterday = date('Y-m-d', strtotime('-1 day', current_time('timestamp')));
+        
+        $visits = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, member_id, visit_date
+            FROM $recip_visits_table
+            WHERE sign_in_time IS NOT NULL
+            AND sign_out_time IS NULL
+            AND DATE(visit_date) = %s",
+            $yesterday
+        ));
+        
+        if (empty($visits)) {
+            error_log('No recip members to sign out');
+            return;
+        }
+        
+        foreach ($visits as $visit) {
+            // Set sign_out_time to 23:59:59 of visit_date
+            $midnight = $visit->visit_date . ' 23:59:59';
+            
+            $updated = $wpdb->update(
+                $recip_visits_table,
+                ['sign_out_time' => $midnight],
+                ['id' => $visit->id],
+                ['%s'],
+                ['%d']
+            );
+            
+            if ($updated === false) {
+                error_log("Failed to sign out recip member visit ID: {$visit->id}");
+            } else {
+                error_log("Signed out recip member visit ID: {$visit->id}");
+            }
+        }
+    }
+
+    /**
      * Automatically sign out guests at midnight for the current day
      */
     public static function auto_sign_out_guests()
     {
         global $wpdb;
+        error_log('Auto sign out guests');
+        
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        // Get current date
-        $current_date = current_time('Y-m-d');
-
-        // Query for visits that are signed in but not signed out for the current day
+        
+        // Get yesterday's date
+        $yesterday = date('Y-m-d', strtotime('-1 day', current_time('timestamp')));
+        
         $visits = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, guest_id, host_member_id, visit_date 
-            FROM $guest_visits_table 
-            WHERE sign_in_time IS NOT NULL 
-            AND sign_out_time IS NULL 
+            "SELECT id, guest_id, host_member_id, visit_date
+            FROM $guest_visits_table
+            WHERE sign_in_time IS NOT NULL
+            AND sign_out_time IS NULL
             AND DATE(visit_date) = %s",
-            $current_date
+            $yesterday
         ));
-
+        
         if (empty($visits)) {
-            return; // No guests to sign out
+            error_log('No guests to sign out');
+            return;
         }
-
+        
         foreach ($visits as $visit) {
-            // Set sign_out_time to midnight of the visit date
-            $midnight = date('Y-m-d 23:59:59', strtotime($visit->visit_date));
-
-            // Update the visit record
-            $wpdb->update(
+            // Set sign_out_time to 23:59:59 of visit_date
+            $midnight = $visit->visit_date . ' 23:59:59';
+            
+            $updated = $wpdb->update(
                 $guest_visits_table,
                 ['sign_out_time' => $midnight],
                 ['id' => $visit->id],
                 ['%s'],
                 ['%d']
             );
-
+            
+            if ($updated === false) {
+                error_log("Failed to sign out guest visit ID: {$visit->id}");
+                continue;
+            }
+            
+            error_log("Signed out guest visit ID: {$visit->id}");
+            
             // Re-evaluate guest status
             $guest_status = self::calculate_guest_status(
                 $visit->guest_id,
                 $visit->host_member_id,
                 $visit->visit_date
             );
-
-            // Update guest status if needed
+            
+            // Update guest status
             $wpdb->update(
                 $guests_table,
-                ['guest_status' => $guest_status], 
+                ['guest_status' => $guest_status],
                 ['id' => $visit->guest_id],
                 ['%s'],
                 ['%d']

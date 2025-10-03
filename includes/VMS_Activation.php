@@ -418,48 +418,50 @@ class VMS_Activation
     }
         
     /**
-     * Add SMS logs cleanup cron job
+     * Add cron jobs
      */
     private static function activate_cron_jobs(): void
     {
-        // Local midnight according to WP settings
-        $midnight_local = strtotime('midnight', current_time('timestamp'));
-
-        // Convert to UTC for cron storage
-        $midnight_utc = $midnight_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
-
-        // Add SMS cleanup job - runs daily at 2 AM
+        // SMS cleanup job
         if (!wp_next_scheduled('cleanup_old_sms_logs')) {
-            wp_schedule_event(strtotime('tomorrow 2:00 AM'), 'daily', 'cleanup_old_sms_logs');
+            $cleanup_time = strtotime('tomorrow 2:00 AM', current_time('timestamp'));
+            wp_schedule_event($cleanup_time, 'daily', 'cleanup_old_sms_logs');
         }
-        
-        // SMS delivery status check - runs every 30 minutes
+    
+        // SMS delivery status check
         if (!wp_next_scheduled('check_sms_delivery_status')) {
             wp_schedule_event(time(), 'hourly', 'check_sms_delivery_status');
         }
-
+        
         if (!wp_next_scheduled('sms_balance_cron')) {
             wp_schedule_event(time(), 'hourly', 'sms_balance_cron');
         }
+        
+        // Midnight jobs - schedule for next midnight
+        $next_midnight = strtotime('tomorrow midnight', current_time('timestamp'));
+        
         if (!wp_next_scheduled('auto_update_visit_status_at_midnight')) {
-            wp_schedule_event($midnight_local, 'daily', 'auto_update_visit_status_at_midnight');
+            wp_schedule_event($next_midnight, 'daily', 'auto_update_visit_status_at_midnight');
         }
+        
         if (!wp_next_scheduled('auto_sign_out_guests_at_midnight')) {
-            wp_schedule_event($midnight_utc, 'daily', 'auto_sign_out_guests_at_midnight');
+            wp_schedule_event($next_midnight, 'daily', 'auto_sign_out_guests_at_midnight');
         }
-
-        // First day of next month at 00:00 local
-        $first_next_month_local = strtotime('first day of next month 00:00:00', current_time('timestamp'));
-        $first_next_month_utc   = $first_next_month_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
+        
+        if (!wp_next_scheduled('auto_sign_out_recip_members_at_midnight')) {
+            wp_schedule_event($next_midnight, 'daily', 'auto_sign_out_recip_members_at_midnight');
+        }
+        
+        // Monthly reset
         if (!wp_next_scheduled('reset_monthly_guest_limits')) {
-            wp_schedule_event($first_next_month_utc, 'monthly', 'reset_monthly_guest_limits');
+            $first_next_month = strtotime('first day of next month midnight', current_time('timestamp'));
+            wp_schedule_event($first_next_month, 'monthly', 'reset_monthly_guest_limits');
         }
-
-        // Jan 1 next year at 00:00 local
-        $jan_first_local = strtotime('January 1 next year 00:00:00', current_time('timestamp'));
-        $jan_first_utc   = $jan_first_local - (get_option('gmt_offset') * HOUR_IN_SECONDS);
+        
+        // Yearly reset
         if (!wp_next_scheduled('reset_yearly_guest_limits')) {
-            wp_schedule_event($jan_first_utc, 'yearly', 'reset_yearly_guest_limits');
+            $jan_first = strtotime('first day of January next year midnight', current_time('timestamp'));
+            wp_schedule_event($jan_first, 'yearly', 'reset_yearly_guest_limits');
         }
     }
 
@@ -468,6 +470,7 @@ class VMS_Activation
         wp_clear_scheduled_hook('sms_balance_cron');
         wp_clear_scheduled_hook('auto_update_visit_status_at_midnight');
         wp_clear_scheduled_hook('auto_sign_out_guests_at_midnight');
+        wp_clear_scheduled_hook('auto_sign_out_recip_members_at_midnight');
         wp_clear_scheduled_hook('reset_monthly_guest_limits');
         wp_clear_scheduled_hook('reset_yearly_guest_limits');
     }

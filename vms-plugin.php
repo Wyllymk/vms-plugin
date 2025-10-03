@@ -84,6 +84,9 @@ final class VMS_Plugin
 
         // Initialize all components
         $this->initialize_components();
+        // Add this temporarily to verify timing
+        // error_log('Cron scheduled for: ' . date('Y-m-d H:i:s', wp_next_scheduled('auto_sign_out_guests_at_midnight')));
+        // error_log('Current time: ' . current_time('Y-m-d H:i:s'));
     }
 
     /**
