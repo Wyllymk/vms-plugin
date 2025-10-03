@@ -40,18 +40,7 @@ class VMS_FormHandler
      */
     public function init(): void
     {
-        $this->start_session();
         $this->register_form_handlers();
-    }
-
-    /**
-     * Start session if not already started
-     */
-    private function start_session(): void
-    {
-        if (!session_id()) {
-            session_start();
-        }
     }
 
     /**

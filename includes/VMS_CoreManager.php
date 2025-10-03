@@ -3105,6 +3105,24 @@ class VMS_CoreManager
             "SELECT id, guest_status FROM $guests_table WHERE phone_number = %s",
             $phone_number
         ));
+        
+        $receive_emails = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT receive_emails 
+                FROM $guests_table 
+                WHERE id = %d",
+                $guest_id
+            )
+        );
+
+        $receive_messages = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT receive_messages 
+                FROM $guests_table 
+                WHERE id = %d",
+                $guest_id
+            )
+        );
 
         if ($existing_guest) {
             $guest_id = $existing_guest->id;
