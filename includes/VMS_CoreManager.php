@@ -1757,60 +1757,64 @@ class VMS_CoreManager
     /**
      * Calculate guest status based on guest_status and visit limits
      */
-    private static function calculate_guest_status(int $guest_id, int $host_member_id, string $visit_date): string
+    private static function calculate_guest_status(int $guest_id, ?int $host_member_id, string $visit_date): string
     {
         global $wpdb;
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        
-        // First, check the guest_status field - this takes precedence
+    
+        // First, check the guest_status field
         $guest_status = $wpdb->get_var($wpdb->prepare(
             "SELECT guest_status FROM $guests_table WHERE id = %d",
             $guest_id
         ));
-        
+    
         // If guest_status is not 'active', return the corresponding status
         if ($guest_status !== 'active') {
-            // Map guest_status to status field
             switch ($guest_status) {
                 case 'suspended':
                     return 'suspended';
                 case 'banned':
                     return 'banned';
                 default:
-                    return 'suspended'; // fallback for any non-active status
+                    return 'suspended';
             }
         }
+    
+        // Only if guest_status is 'active', proceed with limit checks
         
-        // Only if guest_status is 'active', proceed with the limit checks
-        // Daily limit check for host
-        $daily_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $guest_visits_table
-            WHERE host_member_id = %d AND DATE(visit_date) = %s",
-            $host_member_id, $visit_date
-        ));
-        
+        // Daily limit check for host (skip for courtesy guests)
+        if ($host_member_id !== null) {
+            $daily_count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $guest_visits_table
+                WHERE host_member_id = %d AND DATE(visit_date) = %s",
+                $host_member_id, $visit_date
+            ));
+            
+            if ($daily_count >= 4) {
+                return 'unapproved';
+            }
+        }
+    
         // Monthly limit check for guest
         $monthly_count = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM $guest_visits_table
             WHERE guest_id = %d AND MONTH(visit_date) = MONTH(%s) AND YEAR(visit_date) = YEAR(%s)",
             $guest_id, $visit_date, $visit_date
         ));
-        
+    
         // Yearly limit check for guest
         $yearly_count = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM $guest_visits_table
             WHERE guest_id = %d AND YEAR(visit_date) = YEAR(%s)",
             $guest_id, $visit_date
         ));
-        
-        // Determine status based on limits (only when guest_status is 'active')
-        if ($daily_count >= 4) {
-            return 'unapproved';
-        } elseif ($monthly_count >= 4 || $yearly_count >= 24) {
+    
+        // Determine status based on limits
+        if ($monthly_count >= 4 || $yearly_count >= 24) {
             return 'suspended';
         }
-        
+    
         return 'approved';
     }
 
@@ -4822,13 +4826,12 @@ class VMS_CoreManager
                 ['%s'],
                 ['%d']
             );
-            
+
             if ($updated === false) {
                 error_log("Failed to sign out guest visit ID: {$visit->id}");
-                continue;
+            } else {
+                error_log("Signed out guest visit ID: {$visit->id}");
             }
-            
-            error_log("Signed out guest visit ID: {$visit->id}");
             
             // Re-evaluate guest status
             $guest_status = self::calculate_guest_status(
