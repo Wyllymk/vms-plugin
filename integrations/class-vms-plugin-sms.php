@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class VMS_NotificationManager
+class VMS_SMS extends Base
 {
     /**
      * Singleton instance
@@ -55,10 +55,12 @@ class VMS_NotificationManager
     {
         add_action('wp_ajax_refresh_sms_balance', [self::class, 'refresh_sms_balance']);
         add_action('wp_ajax_test_sms_connection', [self::class, 'test_sms_connection']);
-        add_action('sms_balance_cron', [self::class, 'fetch_and_save_sms_balance']);
         add_action('wp_ajax_nopriv_vms_status_callback', [self::class, 'handle_status_callback']);
         add_action('wp_ajax_vms_status_callback', [self::class, 'handle_status_callback']);
         
+        // CRON
+        add_action('sms_balance_cron', [self::class, 'fetch_and_save_sms_balance']);
+
         // NEW: Add SMS delivery status check and cleanup
         add_action('check_sms_delivery_status', [self::class, 'check_pending_sms_delivery']);
         add_action('cleanup_old_sms_logs', [self::class, 'cleanup_old_logs']);
@@ -483,7 +485,8 @@ class VMS_NotificationManager
         float $cost = 0,
         ?array $response_data = null,
         ?string $error_message = null
-    ): bool {
+    ): bool 
+    {
         global $wpdb;
     
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);

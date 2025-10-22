@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class VMS_Admin
+class VMS_Admin extends Base
 {
     /**
      * Singleton instance
@@ -64,7 +64,7 @@ class VMS_Admin
         $settings_link = sprintf(
             '<a href="%s">%s</a>',
             esc_url(admin_url('admin.php?page=vms-settings')),
-            esc_html__('Settings', 'vms')
+            esc_html__('Settings', 'vms-plugin')
         );
         array_unshift($links, $settings_link);
         return $links;
@@ -76,8 +76,8 @@ class VMS_Admin
     public function add_admin_menu(): void
     {
         add_menu_page(
-            __('VMS Settings', 'vms'),
-            __('VMS', 'vms'),
+            __('VMS Settings', 'vms-plugin'),
+            __('VMS', 'vms-plugin'),
             'manage_options',
             'vms-settings',
             [$this, 'render_settings_page'],
@@ -87,8 +87,8 @@ class VMS_Admin
 
         add_submenu_page(
             'vms-settings',
-            __('SMS Logs', 'vms'),
-            __('SMS Logs', 'vms'),
+            __('SMS Logs', 'vms-plugin'),
+            __('SMS Logs', 'vms-plugin'),
             'manage_options',
             'vms-sms-logs',
             [$this, 'render_sms_logs_page']
@@ -154,14 +154,14 @@ class VMS_Admin
         // SMS Leopard API Section
         add_settings_section(
             'vms_sms_section',
-            __('SMS Leopard API Configuration', 'vms'),
+            __('SMS Leopard API Configuration', 'vms-plugin'),
             [$this, 'render_sms_section_description'],
             $this->settings_group
         );
 
         add_settings_field(
             'vms_sms_api_key',
-            __('API Key *', 'vms'),
+            __('API Key *', 'vms-plugin'),
             [$this, 'render_api_key_field'],
             $this->settings_group,
             'vms_sms_section'
@@ -169,7 +169,7 @@ class VMS_Admin
 
         add_settings_field(
             'vms_sms_api_secret',
-            __('API Secret *', 'vms'),
+            __('API Secret *', 'vms-plugin'),
             [$this, 'render_api_secret_field'],
             $this->settings_group,
             'vms_sms_section'
@@ -177,7 +177,7 @@ class VMS_Admin
 
         add_settings_field(
             'vms_sms_sender_id',
-            __('Sender ID', 'vms'),
+            __('Sender ID', 'vms-plugin'),
             [$this, 'render_sender_id_field'],
             $this->settings_group,
             'vms_sms_section'
@@ -185,7 +185,7 @@ class VMS_Admin
 
         add_settings_field(
             'vms_status_url',
-            __('Status Callback URL', 'vms'),
+            __('Status Callback URL', 'vms-plugin'),
             [$this, 'render_status_url_field'],
             $this->settings_group,
             'vms_sms_section'
@@ -193,7 +193,7 @@ class VMS_Admin
 
         add_settings_field(
             'vms_status_secret',
-            __('Status Secret', 'vms'),
+            __('Status Secret', 'vms-plugin'),
             [$this, 'render_status_secret_field'],
             $this->settings_group,
             'vms_sms_section'
@@ -244,7 +244,7 @@ class VMS_Admin
         }
 
         if (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
-            $this->show_success_notice(__('Settings saved successfully!', 'vms'));
+            $this->show_success_notice(__('Settings saved successfully!', 'vms-plugin'));
         }
 
         // Check if API credentials are set
@@ -252,7 +252,7 @@ class VMS_Admin
         $api_secret = get_option('vms_sms_api_secret', '');
         
         if (empty($api_key) || empty($api_secret)) {
-            $this->show_error_notice(__('Please configure SMS Leopard API credentials to use SMS functionality.', 'vms'));
+            $this->show_error_notice(__('Please configure SMS Leopard API credentials to use SMS functionality.', 'vms-plugin'));
         }
     }
 
@@ -280,19 +280,19 @@ class VMS_Admin
         check_ajax_referer('refresh_balance_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_die(__('Insufficient permissions.', 'vms'));
+            wp_die(__('Insufficient permissions.', 'vms-plugin'));
         }
 
         // Here you would integrate with SMS service to get balance
         // For now, return mock data
-        $balance = VMS_NotificationManager::refresh_sms_balance();
+        $balance = VMS_SMS::refresh_sms_balance();
         
         if ($balance !== false) {
             update_option('vms_sms_balance', $balance);
             update_option('vms_sms_last_check', current_time('mysql'));
             wp_send_json_success(['balance' => $balance]);
         } else {
-            wp_send_json_error(__('Failed to fetch balance', 'vms'));
+            wp_send_json_error(__('Failed to fetch balance', 'vms-plugin'));
         }
     }
 
@@ -304,10 +304,10 @@ class VMS_Admin
         check_ajax_referer('test_connection_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_die(__('Insufficient permissions.', 'vms'));
+            wp_die(__('Insufficient permissions.', 'vms-plugin'));
         }
 
-        $result = VMS_NotificationManager::test_sms_connection();        
+        $result = VMS_SMS::test_sms_connection();        
         
         if ($result === true) {
             wp_send_json_success();
@@ -324,24 +324,24 @@ class VMS_Admin
         check_ajax_referer('resend_sms_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_die(__('Insufficient permissions.', 'vms'));
+            wp_die(__('Insufficient permissions.', 'vms-plugin'));
         }
 
         $log_id = isset($_POST['log_id']) ? (int)$_POST['log_id'] : 0;
         
         if (!$log_id) {
-            wp_send_json_error(__('Invalid SMS log ID.', 'vms'));
+            wp_send_json_error(__('Invalid SMS log ID.', 'vms-plugin'));
         }
 
         // Get the original SMS data
         $sms_data = $this->get_sms_log_data($log_id);
         
         if (!$sms_data) {
-            wp_send_json_error(__('SMS log not found.', 'vms'));
+            wp_send_json_error(__('SMS log not found.', 'vms-plugin'));
         }
 
-        // Resend the SMS using VMS_NotificationManager
-        $result = VMS_NotificationManager::send_sms(
+        // Resend the SMS using VMS_SMS
+        $result = VMS_SMS::send_sms(
             $sms_data['recipient_number'],
             $sms_data['message'],
             $sms_data['user_id'],
@@ -349,11 +349,11 @@ class VMS_Admin
         );
 
         if (is_array($result) && isset($result['success']) && $result['success'] === true) {
-            wp_send_json_success(__('SMS resent successfully.', 'vms'));
+            wp_send_json_success(__('SMS resent successfully.', 'vms-plugin'));
         } else {
             $error_message = is_array($result) && isset($result['response'])
                 ? $result['response']
-                : (is_string($result) ? $result : __('Failed to resend SMS.', 'vms'));
+                : (is_string($result) ? $result : __('Failed to resend SMS.', 'vms-plugin'));
 
             wp_send_json_error($error_message);
         }
@@ -385,8 +385,8 @@ class VMS_Admin
     {
         if (!current_user_can('manage_options')) {
             wp_die(
-                __('You do not have sufficient permissions to access this page.', 'vms'),
-                __('Access Denied', 'vms'),
+                __('You do not have sufficient permissions to access this page.', 'vms-plugin'),
+                __('Access Denied', 'vms-plugin'),
                 ['response' => 403]
             );
         }
@@ -396,24 +396,24 @@ class VMS_Admin
         $last_check = get_option('vms_sms_last_check', '');
         ?>
 <div class="wrap">
-    <h1><?php esc_html_e('VMS Settings', 'vms'); ?></h1>
+    <h1><?php esc_html_e('VMS Settings', 'vms-plugin'); ?></h1>
 
     <!-- Balance Card -->
     <div class="postbox" style="margin-top: 20px;">
         <h2 class="hndle" style="margin-inline-start: 10px;">
-            <span><?php esc_html_e('SMS Balance', 'vms'); ?></span>
+            <span><?php esc_html_e('SMS Balance', 'vms-plugin'); ?></span>
         </h2>
         <div class="inside">
-            <p><strong><?php esc_html_e('Current Balance:', 'vms'); ?></strong> KES
-                <?php echo esc_html(number_format($balance, 2)); ?></p>
+            <p><strong><?php esc_html_e('Current Balance:', 'vms-plugin'); ?></strong> KES
+                <?php echo esc_html($balance, 2); ?></p>
             <?php if ($last_check): ?>
-            <p><small><?php esc_html_e('Last updated:', 'vms'); ?>
+            <p><small><?php esc_html_e('Last updated:', 'vms-plugin'); ?>
                     <?php echo esc_html(date('Y-m-d H:i:s', strtotime($last_check))); ?></small></p>
             <?php endif; ?>
             <button type="button" class="button"
-                id="refresh-balance"><?php esc_html_e('Refresh Balance', 'vms'); ?></button>
+                id="refresh-balance"><?php esc_html_e('Refresh Balance', 'vms-plugin'); ?></button>
             <button type="button" class="button button-secondary"
-                id="test-connection"><?php esc_html_e('Test Connection', 'vms'); ?></button>
+                id="test-connection"><?php esc_html_e('Test Connection', 'vms-plugin'); ?></button>
         </div>
     </div>
 
@@ -429,7 +429,7 @@ class VMS_Admin
     jQuery(document).ready(function($) {
         $('#refresh-balance').on('click', function() {
             var button = $(this);
-            button.prop('disabled', true).text('<?php esc_html_e('Refreshing...', 'vms'); ?>');
+            button.prop('disabled', true).text('<?php esc_html_e('Refreshing...', 'vms-plugin'); ?>');
 
             $.post(ajaxurl, {
                 action: 'refresh_sms_balance',
@@ -438,30 +438,31 @@ class VMS_Admin
                 if (response.success) {
                     location.reload();
                 } else {
-                    alert('<?php esc_html_e('Failed to refresh balance', 'vms'); ?>');
+                    alert('<?php esc_html_e('Failed to refresh balance', 'vms-plugin'); ?>');
                 }
             }).always(function() {
                 button.prop('disabled', false).text(
-                    '<?php esc_html_e('Refresh Balance', 'vms'); ?>');
+                    '<?php esc_html_e('Refresh Balance', 'vms-plugin'); ?>');
             });
         });
 
         $('#test-connection').on('click', function() {
             var button = $(this);
-            button.prop('disabled', true).text('<?php esc_html_e('Testing...', 'vms'); ?>');
+            button.prop('disabled', true).text('<?php esc_html_e('Testing...', 'vms-plugin'); ?>');
 
             $.post(ajaxurl, {
                 action: 'test_sms_connection',
                 nonce: '<?php echo wp_create_nonce('test_connection_nonce'); ?>'
             }, function(response) {
                 if (response.success) {
-                    alert('<?php esc_html_e('Connection successful!', 'vms'); ?>');
+                    alert('<?php esc_html_e('Connection successful!', 'vms-plugin'); ?>');
                 } else {
-                    alert('<?php esc_html_e('Connection failed: ', 'vms'); ?>' + response.data);
+                    alert('<?php esc_html_e('Connection failed: ', 'vms-plugin'); ?>' + response
+                        .data);
                 }
             }).always(function() {
                 button.prop('disabled', false).text(
-                    '<?php esc_html_e('Test Connection', 'vms'); ?>');
+                    '<?php esc_html_e('Test Connection', 'vms-plugin'); ?>');
             });
         });
     });
@@ -491,8 +492,8 @@ class VMS_Admin
     {
         if (!current_user_can('manage_options')) {
             wp_die(
-                __('You do not have sufficient permissions to access this page.', 'vms'),
-                __('Access Denied', 'vms'),
+                __('You do not have sufficient permissions to access this page.', 'vms-plugin'),
+                __('Access Denied', 'vms-plugin'),
                 ['response' => 403]
             );
         }
@@ -500,7 +501,7 @@ class VMS_Admin
         // Handle delete action
         if (isset($_POST['delete_log']) && isset($_POST['log_id']) && wp_verify_nonce($_POST['_wpnonce'], 'delete_sms_log')) {
             $this->delete_sms_log((int)$_POST['log_id']);
-            echo '<div class="notice notice-success is-dismissible"><p>' . __('SMS log deleted successfully.', 'vms') . '</p></div>';
+            echo '<div class="notice notice-success is-dismissible"><p>' . __('SMS log deleted successfully.', 'vms-plugin') . '</p></div>';
         }
 
         // Get pagination parameters
@@ -518,11 +519,12 @@ class VMS_Admin
         $start_number = $total_logs - $offset;
         ?>
 <div class="wrap">
-    <h1><?php esc_html_e('SMS Logs', 'vms'); ?></h1>
+    <h1><?php esc_html_e('SMS Logs', 'vms-plugin'); ?></h1>
 
     <!-- Summary Info -->
     <div class="logs-summary">
-        <p><strong><?php esc_html_e('Total SMS Logs:', 'vms'); ?></strong> <?php echo number_format($total_logs); ?></p>
+        <p><strong><?php esc_html_e('Total SMS Logs:', 'vms-plugin'); ?></strong>
+            <?php echo number_format($total_logs); ?></p>
         <?php if ($total_logs > 0): ?>
         <p><?php printf(__('Showing logs %d to %d of %d'), 
             $offset + 1, 
@@ -536,15 +538,15 @@ class VMS_Admin
     <table class="wp-list-table widefat fixed striped sms-logs-table">
         <thead>
             <tr>
-                <th class="column-number"><?php esc_html_e('#', 'vms'); ?></th>
-                <th class="column-user"><?php esc_html_e('Recipient Name', 'vms'); ?></th>
-                <th class="column-phone"><?php esc_html_e('Phone', 'vms'); ?></th>
-                <th class="column-role"><?php esc_html_e('Role', 'vms'); ?></th>
-                <th class="column-message"><?php esc_html_e('Message', 'vms'); ?></th>
-                <th class="column-status"><?php esc_html_e('Status', 'vms'); ?></th>
-                <th class="column-cost"><?php esc_html_e('Cost', 'vms'); ?></th>
-                <th class="column-date"><?php esc_html_e('Date', 'vms'); ?></th>
-                <th class="column-actions"><?php esc_html_e('Actions', 'vms'); ?></th>
+                <th class="column-number"><?php esc_html_e('#', 'vms-plugin'); ?></th>
+                <th class="column-user"><?php esc_html_e('Recipient Name', 'vms-plugin'); ?></th>
+                <th class="column-phone"><?php esc_html_e('Phone', 'vms-plugin'); ?></th>
+                <th class="column-role"><?php esc_html_e('Role', 'vms-plugin'); ?></th>
+                <th class="column-message"><?php esc_html_e('Message', 'vms-plugin'); ?></th>
+                <th class="column-status"><?php esc_html_e('Status', 'vms-plugin'); ?></th>
+                <th class="column-cost"><?php esc_html_e('Cost', 'vms-plugin'); ?></th>
+                <th class="column-date"><?php esc_html_e('Date', 'vms-plugin'); ?></th>
+                <th class="column-actions"><?php esc_html_e('Actions', 'vms-plugin'); ?></th>
             </tr>
         </thead>
         <tbody>
@@ -598,17 +600,17 @@ class VMS_Admin
                         <!-- Resend Button -->
                         <button type="button" class="button-link resend-button"
                             data-log-id="<?php echo esc_attr($log['id']); ?>"
-                            title="<?php esc_attr_e('Resend SMS', 'vms'); ?>">
+                            title="<?php esc_attr_e('Resend SMS', 'vms-plugin'); ?>">
                             <span class="dashicons dashicons-update"></span>
                         </button>
 
                         <!-- Delete Button -->
                         <form method="post" style="display:inline;" class="delete-form"
-                            onsubmit="return confirm('<?php esc_attr_e('Are you sure you want to delete this SMS log?', 'vms'); ?>');">
+                            onsubmit="return confirm('<?php esc_attr_e('Are you sure you want to delete this SMS log?', 'vms-plugin'); ?>');">
                             <?php wp_nonce_field('delete_sms_log'); ?>
                             <input type="hidden" name="log_id" value="<?php echo esc_attr($log['id']); ?>">
                             <button type="submit" name="delete_log" class="button-link delete-button"
-                                title="<?php esc_attr_e('Delete Log', 'vms'); ?>">
+                                title="<?php esc_attr_e('Delete Log', 'vms-plugin'); ?>">
                                 <span class="dashicons dashicons-trash"></span>
                             </button>
                         </form>
@@ -618,7 +620,7 @@ class VMS_Admin
             <?php endforeach; ?>
             <?php else: ?>
             <tr>
-                <td colspan="9" class="no-logs"><?php esc_html_e('No SMS logs found.', 'vms'); ?></td>
+                <td colspan="9" class="no-logs"><?php esc_html_e('No SMS logs found.', 'vms-plugin'); ?></td>
             </tr>
             <?php endif; ?>
         </tbody>
@@ -629,7 +631,7 @@ class VMS_Admin
     <div class="tablenav">
         <div class="tablenav-pages">
             <span
-                class="displaying-num"><?php printf(_n('%s item', '%s items', $total_logs, 'vms'), number_format_i18n($total_logs)); ?></span>
+                class="displaying-num"><?php printf(_n('%s item', '%s items', $total_logs, 'vms-plugin'), number_format_i18n($total_logs)); ?></span>
             <?php
             $pagination_args = [
                 'base' => add_query_arg('paged', '%#%'),
@@ -1114,7 +1116,7 @@ class VMS_Admin
      */
     public function render_sms_section_description(): void
     {
-        echo '<p>' . esc_html__('Configure SMS Leopard API settings to enable SMS notifications.', 'vms') . '</p>';
+        echo '<p>' . esc_html__('Configure SMS Leopard API settings to enable SMS notifications.', 'vms-plugin') . '</p>';
     }
 
     /**
@@ -1127,7 +1129,7 @@ class VMS_Admin
 <input type="text" name="vms_sms_api_key" id="vms_sms_api_key" value="<?php echo esc_attr($value); ?>"
     class="regular-text" required>
 <p class="description">
-    <?php esc_html_e('Enter SMS Leopard API key.', 'vms'); ?>
+    <?php esc_html_e('Enter SMS Leopard API key.', 'vms-plugin'); ?>
 </p>
 <?php
     }
@@ -1142,7 +1144,7 @@ class VMS_Admin
 <input type="password" name="vms_sms_api_secret" id="vms_sms_api_secret" value="<?php echo esc_attr($value); ?>"
     class="regular-text" required>
 <p class="description">
-    <?php esc_html_e('Enter SMS Leopard API secret.', 'vms'); ?>
+    <?php esc_html_e('Enter SMS Leopard API secret.', 'vms-plugin'); ?>
 </p>
 <?php
     }
@@ -1157,7 +1159,7 @@ class VMS_Admin
 <input type="text" name="vms_sms_sender_id" id="vms_sms_sender_id" value="<?php echo esc_attr($value); ?>"
     class="regular-text">
 <p class="description">
-    <?php esc_html_e('SMS sender ID. Use "SMS_TEST" for testing.', 'vms'); ?>
+    <?php esc_html_e('SMS sender ID. Use "SMS_TEST" for testing.', 'vms-plugin'); ?>
 </p>
 <?php
     }
@@ -1171,7 +1173,7 @@ class VMS_Admin
         ?>
 <input type="url" name="vms_status_url" id="vms_status_url" value="<?php echo esc_url($value); ?>" class="regular-text">
 <p class="description">
-    <?php esc_html_e('Optional callback URL for delivery reports.', 'vms'); ?>
+    <?php esc_html_e('Optional callback URL for delivery reports.', 'vms-plugin'); ?>
 </p>
 <?php
     }
@@ -1186,7 +1188,7 @@ class VMS_Admin
 <input type="text" name="vms_status_secret" id="vms_status_secret" value="<?php echo esc_attr($value); ?>"
     class="regular-text">
 <p class="description">
-    <?php esc_html_e('Secret for callback verification (required if status URL is provided).', 'vms'); ?>
+    <?php esc_html_e('Secret for callback verification (required if status URL is provided).', 'vms-plugin'); ?>
 </p>
 <?php
     }

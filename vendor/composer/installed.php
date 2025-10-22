@@ -1,6 +1,6 @@
 <?php return array(
     'root' => array(
-        'name' => 'wylly/wp-vms',
+        'name' => 'wylly/vms-plugin',
         'pretty_version' => '1.0.0',
         'version' => '1.0.0.0',
         'reference' => null,
@@ -10,16 +10,83 @@
         'dev' => true,
     ),
     'versions' => array(
-        'cmb2/cmb2' => array(
-            'pretty_version' => 'v2.11.0',
-            'version' => '2.11.0.0',
-            'reference' => '2847828b5cce1b48d09427ee13e6f7c752704468',
-            'type' => 'wordpress-plugin',
-            'install_path' => __DIR__ . '/../cmb2/cmb2',
+        'dealerdirect/phpcodesniffer-composer-installer' => array(
+            'pretty_version' => 'v1.1.2',
+            'version' => '1.1.2.0',
+            'reference' => 'e9cf5e4bbf7eeaf9ef5db34938942602838fc2b1',
+            'type' => 'composer-plugin',
+            'install_path' => __DIR__ . '/../dealerdirect/phpcodesniffer-composer-installer',
             'aliases' => array(),
-            'dev_requirement' => false,
+            'dev_requirement' => true,
         ),
-        'wylly/wp-vms' => array(
+        'phpcompatibility/php-compatibility' => array(
+            'pretty_version' => '9.3.5',
+            'version' => '9.3.5.0',
+            'reference' => '9fb324479acf6f39452e0655d2429cc0d3914243',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../phpcompatibility/php-compatibility',
+            'aliases' => array(),
+            'dev_requirement' => true,
+        ),
+        'phpcompatibility/phpcompatibility-paragonie' => array(
+            'pretty_version' => '1.3.4',
+            'version' => '1.3.4.0',
+            'reference' => '244d7b04fc4bc2117c15f5abe23eb933b5f02bbf',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../phpcompatibility/phpcompatibility-paragonie',
+            'aliases' => array(),
+            'dev_requirement' => true,
+        ),
+        'phpcompatibility/phpcompatibility-wp' => array(
+            'pretty_version' => '2.1.8',
+            'version' => '2.1.8.0',
+            'reference' => '7c8d18b4d90dac9e86b0869a608fa09158e168fa',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../phpcompatibility/phpcompatibility-wp',
+            'aliases' => array(),
+            'dev_requirement' => true,
+        ),
+        'phpcsstandards/phpcsextra' => array(
+            'pretty_version' => 'dev-develop',
+            'version' => 'dev-develop',
+            'reference' => '4eeabc49620e8a582a35f8299f24ca222c753b86',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../phpcsstandards/phpcsextra',
+            'aliases' => array(
+                0 => '1.x-dev',
+            ),
+            'dev_requirement' => true,
+        ),
+        'phpcsstandards/phpcsutils' => array(
+            'pretty_version' => 'dev-develop',
+            'version' => 'dev-develop',
+            'reference' => '560cc27aaf8eeec2e4acb6a705ac3d5fdd405322',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../phpcsstandards/phpcsutils',
+            'aliases' => array(
+                0 => '1.x-dev',
+            ),
+            'dev_requirement' => true,
+        ),
+        'squizlabs/php_codesniffer' => array(
+            'pretty_version' => '3.x-dev',
+            'version' => '3.9999999.9999999.9999999-dev',
+            'reference' => 'c7c1e54a5bf617b1f2231b07e2d776ff284fc871',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../squizlabs/php_codesniffer',
+            'aliases' => array(),
+            'dev_requirement' => true,
+        ),
+        'wp-coding-standards/wpcs' => array(
+            'pretty_version' => '3.2.0',
+            'version' => '3.2.0.0',
+            'reference' => 'd2421de7cec3274ae622c22c744de9a62c7925af',
+            'type' => 'phpcodesniffer-standard',
+            'install_path' => __DIR__ . '/../wp-coding-standards/wpcs',
+            'aliases' => array(),
+            'dev_requirement' => true,
+        ),
+        'wylly/vms-plugin' => array(
             'pretty_version' => '1.0.0',
             'version' => '1.0.0.0',
             'reference' => null,
@@ -31,7 +98,7 @@
         'yahnis-elsts/plugin-update-checker' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'reference' => '8add8143a274c47cafed48512e1259a2be859837',
+            'reference' => '288f270d8e5afe80114331e53aba0a55709092a1',
             'type' => 'library',
             'install_path' => __DIR__ . '/../yahnis-elsts/plugin-update-checker',
             'aliases' => array(
