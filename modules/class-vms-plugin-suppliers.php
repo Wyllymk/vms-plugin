@@ -1238,19 +1238,26 @@ class VMS_Suppliers extends Base
             error_log("Existing guest found: {$guest->first_name} {$guest->last_name} (Status: {$old_status})");
 
             // ----------------------------
-            // 3. CHECK FOR DUPLICATE ID NUMBER
+            // 3. CHECK FOR DUPLICATE ID NUMBER (NULL-SAFE)
             // ----------------------------
-            if (!empty($id_number)) {
+            if ($id_number !== '') {
+                // Check only if ID number is not empty and not NULL
                 $id_number_exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM $guests_table WHERE id_number = %s AND id != %d",
+                    "SELECT id FROM $guests_table 
+                    WHERE id_number IS NOT NULL 
+                    AND id_number = %s 
+                    AND id != %d",
                     $id_number,
                     $guest_id
                 ));
 
                 if ($id_number_exists) {
-                    error_log("Duplicate ID number detected for guest {$guest_id}");
+                    error_log("Duplicate ID number detected for guest {$guest_id} (ID Number: {$id_number})");
                     wp_send_json_error(['messages' => ['ID number is already in use by another guest']]);
                 }
+            } else {
+                // Log case where ID number is NULL or empty
+                error_log("Guest {$guest_id} updated with NULL or empty ID number — allowed.");
             }
 
             // ----------------------------
