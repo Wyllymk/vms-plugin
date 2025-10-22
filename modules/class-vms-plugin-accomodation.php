@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class VMS_Accomodation extends Base
+class VMS_Accommodation extends Base
 {
     /**
      * Singleton instance
@@ -49,137 +49,16 @@ class VMS_Accomodation extends Base
     private static function setup_guest_management_hooks(): void
     {      
         // Guest
-        add_action('wp_ajax_accomodation_guest_registration', [self::class, 'handle_accomodation_guest_registration']);
-        add_action('wp_ajax_update_accomodation_guest', [self::class, 'handle_guest_update']);
-        add_action('wp_ajax_delete_accomodation_guest', [self::class, 'handle_guest_deletion']);
+        add_action('wp_ajax_accommodation_guest_registration', [self::class, 'handle_accommodation_guest_registration']);
+        add_action('wp_ajax_update_accommodation_guest', [self::class, 'handle_guest_update']);
+        add_action('wp_ajax_delete_accommodation_guest', [self::class, 'handle_guest_deletion']);
         
         add_action('wp_ajax_register_accommodation_visit', [self::class, 'handle_visit_registration']);
 
-        add_action('wp_ajax_sign_in_accomodation_guest', [self::class, 'handle_sign_in_guest']);
-        add_action('wp_ajax_sign_out_accomodation_guest', [self::class, 'handle_sign_out_guest']);
-        add_action('auto_update_visit_status_at_midnight', [self::class, 'auto_update_visit_statuses']);
-        add_action('auto_sign_out_guests_at_midnight', [self::class, 'auto_sign_out_guests']);
-        add_action('reset_monthly_guest_limits', [self::class, 'reset_monthly_limits']);
-        add_action('reset_yearly_guest_limits', [self::class, 'reset_yearly_limits']);
-
-        // NEW: Add cancellation handler
-        add_action('wp_ajax_cancel_visit', [self::class, 'handle_visit_cancellation']);
-        add_action('wp_ajax_update_guest_status', [self::class, 'handle_guest_status_update']);
-        add_action('wp_ajax_update_visit_status', [self::class, 'handle_visit_status_update']);
-    } 
-
-    /**
-     * Handle visit cancellation via AJAX - UPDATED with error logging and safeguards
-     */
-    public static function handle_visit_cancellation(): void
-    {
-        try {
-            // Verify AJAX nonce and capability
-            self::verify_ajax_request();
-
-            error_log("[VMS] handle_visit_cancellation called at " . current_time('mysql'));
-
-            // Sanitize and validate visit ID
-            $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
-            if (!$visit_id) {
-                wp_send_json_error(['messages' => ['Invalid visit ID']]);
-                return;
-            }
-
-            global $wpdb;
-            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
-            $guests_table       = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
-
-            // Fetch visit and guest details
-            $visit = $wpdb->get_row($wpdb->prepare(
-                "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails
-                FROM {$guest_visits_table} gv
-                LEFT JOIN {$guests_table} g ON g.id = gv.guest_id
-                WHERE gv.id = %d",
-                $visit_id
-            ));
-
-            if (!$visit) {
-                wp_send_json_error(['messages' => ['Visit not found']]);
-                return;
-            }
-
-            // Store old status for later notifications
-            $old_status = $visit->status;
-
-            // Update visit record to cancelled
-            $updated = $wpdb->update(
-                $guest_visits_table,
-                ['status' => 'cancelled'],
-                ['id' => $visit_id],
-                ['%s'],
-                ['%d']
-            );
-
-            if ($updated === false) {
-                error_log("[VMS] Visit cancellation failed (DB error) for visit ID: {$visit_id}");
-                wp_send_json_error(['messages' => ['Failed to cancel visit']]);
-                return;
-            }
-
-            // ✅ Recalculate guest visit status and host daily limit after cancellation
-            try {
-                self::recalculate_guest_visit_statuses($visit->guest_id);
-            } catch (Throwable $e) {
-                error_log("[VMS] Error recalculating guest visit statuses for guest ID {$visit->guest_id}: " . $e->getMessage());
-            }
-
-            if (!empty($visit->host_member_id)) {
-                try {
-                    self::recalculate_host_daily_limits($visit->host_member_id, $visit->visit_date);
-                } catch (Throwable $e) {
-                    error_log("[VMS] Error recalculating host limits for host ID {$visit->host_member_id}: " . $e->getMessage());
-                }
-            }
-
-            // ✅ Prepare guest and visit data for notifications
-            $guest_data = [
-                'first_name'       => $visit->first_name,
-                'phone_number'     => $visit->phone_number,
-                'email'            => $visit->email,
-                'receive_messages' => $visit->receive_messages,
-                'receive_emails'   => $visit->receive_emails,
-                'user_id'          => $visit->guest_id
-            ];
-
-            $visit_data = [
-                'visit_date'      => $visit->visit_date,
-                'host_member_id'  => $visit->host_member_id
-            ];
-
-            // ✅ Send SMS notification
-            try {
-                VMS_SMS::get_instance()->send_visit_status_notification(
-                    $guest_data,
-                    $visit_data,
-                    $old_status,
-                    'cancelled'
-                );
-            } catch (Throwable $e) {
-                error_log("[VMS] Failed to send SMS cancellation notice for visit ID {$visit_id}: " . $e->getMessage());
-            }
-
-            // ✅ Send Email notification
-            try {
-                self::send_visit_cancellation_email($guest_data, $visit_data);
-            } catch (Throwable $e) {
-                error_log("[VMS] Failed to send email cancellation notice for visit ID {$visit_id}: " . $e->getMessage());
-            }
-
-            // ✅ Return success response
-            wp_send_json_success(['messages' => ['Visit cancelled successfully']]);
-
-        } catch (Throwable $e) {
-            // Catch all unexpected exceptions and log them
-            error_log("[VMS] Unexpected error in handle_visit_cancellation: " . $e->getMessage());
-            wp_send_json_error(['messages' => ['An unexpected error occurred while cancelling the visit. Please try again.']]);
-        }
-    }   
+        add_action('wp_ajax_sign_in_accommodation_guest', [self::class, 'handle_sign_in_guest']);
+        add_action('wp_ajax_sign_out_accommodation_guest', [self::class, 'handle_sign_out_guest']);
+        add_action('auto_sign_out_accommodation_guests_at_midnight', [self::class, 'auto_sign_out_guests']);
+    }  
 
     /**
      * Handle guest sign-in via AJAX with strict ID number validation
@@ -717,10 +596,10 @@ class VMS_Accomodation extends Base
     /**
      * Handle accommodation guest registration via AJAX - with enhanced logging and safe error handling.
      */
-    public static function handle_accomodation_guest_registration(): void
+    public static function handle_accommodation_guest_registration(): void
     {
         self::verify_ajax_request();
-        error_log("[Accommodation Guest Registration] === handle_accomodation_guest_registration() START ===");
+        error_log("[Accommodation Guest Registration] === handle_accommodation_guest_registration() START ===");
 
         global $wpdb;
         $errors = [];
@@ -852,7 +731,7 @@ class VMS_Accomodation extends Base
             // -------------------------------------------------------------
             try {
                 error_log("[Accommodation Guest Registration] Attempting to send SMS for guest_id {$guest_id}");
-                self::send_accomodation_guest_registration_sms(
+                self::send_accommodation_guest_registration_sms(
                     $guest_id,
                     $first_name,
                     $last_name,
@@ -897,7 +776,7 @@ class VMS_Accomodation extends Base
             wp_send_json_error(['messages' => ['An unexpected error occurred. Please try again later.']]);
         }
 
-        error_log("[Accommodation Guest Registration] === handle_accomodation_guest_registration() END ===");
+        error_log("[Accommodation Guest Registration] === handle_accommodation_guest_registration() END ===");
     }
 
     /**
@@ -908,36 +787,28 @@ class VMS_Accomodation extends Base
         global $wpdb;
 
         try {
-            error_log('VMS ACCOMODATION: Visit registration started.');
+            error_log('[Accommodation Guest Visit Registration] Visit registration started.');
 
             // --- Retrieve & sanitize POST data ---
             $guest_id       = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
-            $host_member_id = isset($_POST['host_member_id']) ? absint($_POST['host_member_id']) : null;
             $visit_date     = sanitize_text_field($_POST['visit_date'] ?? '');
 
             $errors = [];
+
+            $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
 
             // --- Validate guest ---
             if ($guest_id <= 0) {
                 $errors[] = 'Guest is required';
             } else {
                 $guest_exists = $wpdb->get_var(
-                    $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}vms_guests WHERE id = %d", $guest_id)
+                    $wpdb->prepare("SELECT COUNT(*) FROM {$guests_table} WHERE id = %d", $guest_id)
                 );
                 if (!$guest_exists) {
                     $errors[] = 'Invalid guest selected';
                 }
             }
-
-            // --- Validate host ---
-            $host_member = null;
-            if ($host_member_id) {
-                $host_member = get_userdata($host_member_id);
-                if (!$host_member) {
-                    $errors[] = 'Invalid host member selected';
-                }
-            }
-
+           
             // --- Validate visit date ---
             if (empty($visit_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visit_date)) {
                 $errors[] = 'Valid visit date is required (YYYY-MM-DD)';
@@ -951,7 +822,7 @@ class VMS_Accomodation extends Base
 
             // --- Return early on validation errors ---
             if (!empty($errors)) {
-                error_log('VMS: Validation failed - ' . implode(', ', $errors));
+                error_log('[Accommodation Guest Visit Registration] Validation failed - ' . implode(', ', $errors));
                 wp_send_json_error(['messages' => $errors]);
             }
 
@@ -967,7 +838,7 @@ class VMS_Accomodation extends Base
             ));
 
             if (!$guest_info) {
-                error_log("VMS: Guest info not found for ID $guest_id.");
+                error_log("[Accommodation Guest Visit Registration] Guest info not found for ID $guest_id.");
                 wp_send_json_error(['messages' => ['Guest record not found']]);
             }
 
@@ -979,7 +850,7 @@ class VMS_Accomodation extends Base
             ));
 
             if ($existing_visit && $existing_visit->status !== 'cancelled') {
-                error_log("VMS: Duplicate visit found for guest ID $guest_id on $visit_date.");
+                error_log("[Accommodation Guest Visit Registration] Duplicate visit found for guest ID $guest_id on $visit_date.");
                 wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
             }
 
@@ -995,42 +866,40 @@ class VMS_Accomodation extends Base
 
             // --- Insert or update visit record ---
             if ($existing_visit && $existing_visit->status === 'cancelled') {
-                error_log("VMS: Reusing cancelled visit record ID {$existing_visit->id}.");
+                error_log("[Accommodation Guest Visit Registration] Reusing cancelled visit record ID {$existing_visit->id}.");
 
                 $updated = $wpdb->update(
                     $table,
                     [
-                        'host_member_id' => $host_member_id,
                         'status'         => $preliminary_status,
                         'sign_in_time'   => null,
                         'sign_out_time'  => null,
                     ],
                     ['id' => $existing_visit->id],
-                    ['%d','%s','%s','%s'],
+                    ['%s','%s','%s'],
                     ['%d']
                 );
 
                 if ($updated === false) {
-                    error_log("VMS ERROR: Failed to update cancelled visit for guest ID $guest_id.");
+                    error_log("[Accommodation Guest Visit Registration] ERROR: Failed to update cancelled visit for guest ID $guest_id.");
                     wp_send_json_error(['messages' => ['Failed to update cancelled visit']]);
                 }
 
                 $visit_id = $existing_visit->id;
             } else {
-                error_log("VMS: Inserting new visit record for guest ID $guest_id.");
+                error_log("[Accommodation Guest Visit Registration] Inserting new visit record for guest ID $guest_id.");
                 $inserted = $wpdb->insert(
                     $table,
                     [
                         'guest_id'       => $guest_id,
-                        'host_member_id' => $host_member_id,
                         'visit_date'     => $visit_date,
                         'status'         => $preliminary_status
                     ],
-                    ['%d','%d','%s','%s']
+                    ['%d','%s','%s']
                 );
 
                 if (!$inserted) {
-                    error_log("VMS ERROR: DB insert failed for guest ID $guest_id.");
+                    error_log("[Accommodation Guest Visit Registration] ERROR: DB insert failed for guest ID $guest_id.");
                     wp_send_json_error(['messages' => ['Failed to register visit']]);
                 }
 
@@ -1039,77 +908,44 @@ class VMS_Accomodation extends Base
 
             // --- Send email/SMS notifications ---
             if ($guest_info) {
-                if ($courtesy === 'Courtesy') {
-                    error_log("VMS: Sending courtesy visit notifications to {$guest_info->email}.");
+                
+                error_log("[Accommodation Guest Visit Registration] Sending standard visit notifications to {$guest_info->email}.");
 
-                    self::send_courtesy_visit_registration_emails(
-                        $guest_info->first_name,
-                        $guest_info->last_name,
-                        $guest_info->email,
-                        $guest_info->receive_emails,
-                        $visit_date,
-                        $preliminary_status
-                    );
+                self::send_visit_registration_emails(
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->email,
+                    $guest_info->receive_emails,
+                    $host_member,
+                    $visit_date,
+                    $preliminary_status
+                );
 
-                    self::send_courtesy_visit_registration_sms(
-                        $guest_id,
-                        $guest_info->first_name,
-                        $guest_info->last_name,
-                        $guest_info->phone_number,
-                        $guest_info->receive_messages,
-                        $visit_date,
-                        $preliminary_status
-                    );
-                } else {
-                    error_log("VMS: Sending standard visit notifications to {$guest_info->email}.");
-
-                    self::send_visit_registration_emails(
-                        $guest_info->first_name,
-                        $guest_info->last_name,
-                        $guest_info->email,
-                        $guest_info->receive_emails,
-                        $host_member,
-                        $visit_date,
-                        $preliminary_status
-                    );
-
-                    self::send_visit_registration_sms(
-                        $guest_id,
-                        $guest_info->first_name,
-                        $guest_info->last_name,
-                        $guest_info->phone_number,
-                        $guest_info->receive_messages,
-                        $host_member,
-                        $visit_date,
-                        $preliminary_status
-                    );
-                }
+                self::send_visit_registration_sms(
+                    $guest_id,
+                    $guest_info->first_name,
+                    $guest_info->last_name,
+                    $guest_info->phone_number,
+                    $guest_info->receive_messages,
+                    $host_member,
+                    $visit_date,
+                    $preliminary_status
+                );
+                
             }
 
             // --- Retrieve the saved visit ---
             $visit = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $visit_id));
-
-            // --- Determine host display name ---
-            $host_display = 'N/A';
-            if (!empty($visit->host_member_id)) {
-                $host_user = get_userdata($visit->host_member_id);
-                if ($host_user) {
-                    $first = get_user_meta($visit->host_member_id, 'first_name', true);
-                    $last  = get_user_meta($visit->host_member_id, 'last_name', true);
-                    $host_display = (!empty($first) || !empty($last)) ? trim("$first $last") : $host_user->user_login;
-                }
-            }
-
+           
             // --- Compute status display fields ---
             $status       = VMS_Core::get_visit_status($visit->visit_date, $visit->sign_in_time, $visit->sign_out_time);
             $status_class = VMS_Core::get_status_class($status);
             $status_text  = VMS_Core::get_status_text($status);
 
-            error_log("VMS: Visit successfully registered (visit ID $visit_id).");
+            error_log("[Accommodation Guest Visit Registration] Visit successfully registered (visit ID $visit_id).");
 
             wp_send_json_success([
                 'id'            => $visit->id,
-                'host_display'  => $host_display,
                 'visit_date'    => VMS_Core::format_date($visit->visit_date),
                 'sign_in_time'  => VMS_Core::format_time($visit->sign_in_time),
                 'sign_out_time' => VMS_Core::format_time($visit->sign_out_time),
@@ -1120,112 +956,15 @@ class VMS_Accomodation extends Base
                 'messages'      => ['Visit registered successfully']
             ]);
         } catch (Exception $e) {
-            error_log('VMS ERROR: Exception during visit registration - ' . $e->getMessage());
+            error_log('[Accommodation Guest Visit Registration] ERROR: Exception during visit registration - ' . $e->getMessage());
             wp_send_json_error(['messages' => ['An unexpected error occurred during visit registration.']]);
         }
     }  
-
-    /**
-     * Send SMS notifications for guest registration with host
-     */
-    private static function send_guest_registration_sms(
-        $guest_id,
-        $first_name,
-        $last_name,
-        $guest_phone,
-        $guest_receive_messages,
-        $host_member,
-        $visit_date,
-        $status
-    ) 
-    {
-        error_log("=== send_guest_registration_sms() triggered for guest_id: {$guest_id} ===");
-
-        // Validate visit date
-        $timestamp = strtotime($visit_date);
-        if (!$timestamp) {
-            error_log("Invalid visit_date provided for guest_id {$guest_id}: {$visit_date}");
-            $formatted_date = 'unspecified date';
-        } else {
-            $formatted_date = date('F j, Y', $timestamp);
-        }
-
-        // Determine readable status
-        $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
-
-        // Validate host_member object
-        if (!($host_member instanceof WP_User)) {
-            error_log("Invalid or missing host_member object for guest_id {$guest_id}. Skipping host-related SMS.");
-            $host_first_name = 'Unknown';
-            $host_last_name = '';
-        } else {
-            $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
-            $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
-        }
-
-        // ---------------------------------------------------
-        // 1️⃣ Send SMS to Guest
-        // ---------------------------------------------------
-        if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
-            $guest_message = "Dear {$first_name},\nYou have been booked as a visitor at Nyeri Club by {$host_first_name} {$host_last_name}. Your visit registered for {$formatted_date} is {$status_text}.";
-            $role = 'guest';
-
-            if ($status === 'approved') {
-                $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
-            } else {
-                $guest_message .= " You will be notified once approved.";
-            }
-
-            error_log("Preparing to send SMS to Guest (Phone: {$guest_phone})");
-
-            try {
-                VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);
-                error_log("Guest SMS successfully sent to {$guest_phone}");
-            } catch (Throwable $e) {
-                error_log("Guest SMS failed for guest_id {$guest_id}: " . $e->getMessage());
-            }
-        } else {
-            error_log("Guest opted out of SMS or phone missing for guest_id {$guest_id}");
-        }
-
-        // ---------------------------------------------------
-        // 2️⃣ Send SMS to Host (if valid host object)
-        // ---------------------------------------------------
-        if ($host_member instanceof WP_User) {
-            $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
-            $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
-            $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
-            $roles                 = $host_member->roles ?? [];
-            $role                  = !empty($roles) ? $roles[0] : 'member';
-
-            if ($host_receive_messages === 'yes' && !empty($host_phone)) {
-                $host_message = "Dear {$host_first_name},\nYour guest {$first_name} {$last_name} has been registered for {$formatted_date}. Status: {$status_text}.";
-                if ($status === 'approved') {
-                    $host_message .= " Please be available to receive them.";
-                } else {
-                    $host_message .= " Pending approval due to limits.";
-                }
-
-                error_log("Preparing to send SMS to Host (ID: {$host_member->ID}, Phone: {$host_phone})");
-
-                try {
-                    VMS_SMS::send_sms($host_phone, $host_message, $host_member->ID, $role);
-                    error_log("Host SMS successfully sent to {$host_phone}");
-                } catch (Throwable $e) {
-                    error_log("Host SMS failed for guest_id {$guest_id}: " . $e->getMessage());
-                }
-            } else {
-                error_log("Host opted out of SMS or phone missing for host ID {$host_member->ID}");
-            }
-        }
-
-        error_log("=== send_guest_registration_sms() completed for guest_id: {$guest_id} ===");
-    }
     
     /**
-     * Send SMS notifications for accomodation guest registration (no host involved)
+     * Send SMS notifications for accommodation guest registration (no host involved)
      *
-     * @param int    $guest_id                ID of the accomodation guest record.
+     * @param int    $guest_id                ID of the accommodation guest record.
      * @param string $first_name              Guest's first name.
      * @param string $last_name               Guest's last name.
      * @param string $guest_phone             Guest's phone number.
@@ -1235,7 +974,7 @@ class VMS_Accomodation extends Base
      *
      * @return void
      */
-    private static function send_accomodation_guest_registration_sms(
+    private static function send_accommodation_guest_registration_sms(
         $guest_id,
         $first_name,
         $last_name,
@@ -1246,7 +985,7 @@ class VMS_Accomodation extends Base
     ): void 
     {
         // Log entry point for debugging
-        error_log("[Accomodation Guest SMS] === send_accomodation_guest_registration_sms() triggered for guest_id: {$guest_id} ===");
+        error_log("[Accommodation Guest SMS] === send_accommodation_guest_registration_sms() triggered for guest_id: {$guest_id} ===");
 
         try {
             // Format visit date for readability (e.g., October 22, 2025)
@@ -1254,11 +993,11 @@ class VMS_Accomodation extends Base
             $status_text    = ($status === 'approved') ? 'Approved' : 'Pending Approval';
 
             // Log SMS eligibility
-            error_log("[Accomodation Guest SMS] Checking message preferences for guest_id: {$guest_id}, receive_messages: {$guest_receive_messages}");
+            error_log("[Accommodation Guest SMS] Checking message preferences for guest_id: {$guest_id}, receive_messages: {$guest_receive_messages}");
 
             // Only proceed if guest opted in and phone number is valid
             if ($guest_receive_messages === 'yes' && !empty($guest_phone)) {
-                error_log("[Accomodation Guest SMS] Preparing message for {$first_name} {$last_name} (Phone: {$guest_phone})");
+                error_log("[Accommodation Guest SMS] Preparing message for {$first_name} {$last_name} (Phone: {$guest_phone})");
 
                 // Build personalized message
                 $guest_message = "Dear {$first_name},\n";
@@ -1277,26 +1016,26 @@ class VMS_Accomodation extends Base
                 // Safely attempt to send SMS (with error handling and logging)
                 // -------------------------------------------------------------
                 try {
-                    error_log("[Accomodation Guest SMS] Sending SMS to {$guest_phone} ...");
+                    error_log("[m Guest SMS] Sending SMS to {$guest_phone} ...");
                     VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);
-                    error_log("[Accomodation Guest SMS] SMS sent successfully to {$guest_phone}");
+                    error_log("[Accommodation Guest SMS] SMS sent successfully to {$guest_phone}");
                 } catch (Throwable $e) {
-                    error_log("[Accomodation Guest SMS] ERROR sending SMS to {$guest_phone}: " . $e->getMessage());
-                    error_log("[Accomodation Guest SMS] Stack trace: " . $e->getTraceAsString());
+                    error_log("[Accommodation Guest SMS] ERROR sending SMS to {$guest_phone}: " . $e->getMessage());
+                    error_log("[Accommodation Guest SMS] Stack trace: " . $e->getTraceAsString());
                 }
                 
             } else {
-                error_log("[Accomodation Guest SMS] Guest opted out or phone missing. No SMS sent for guest_id: {$guest_id}");
+                error_log("[Accommodation Guest SMS] Guest opted out or phone missing. No SMS sent for guest_id: {$guest_id}");
             }
         } catch (Throwable $e) {
             // Catch any unexpected exception in this method
-            error_log("[Accomodation Guest SMS] FATAL ERROR for guest_id {$guest_id}: " . $e->getMessage());
-            error_log("[Accomodation Guest SMS] Stack trace: " . $e->getTraceAsString());
+            error_log("[Accommodation Guest SMS] FATAL ERROR for guest_id {$guest_id}: " . $e->getMessage());
+            error_log("[Accommodation Guest SMS] Stack trace: " . $e->getTraceAsString());
             // Do not rethrow — registration should continue gracefully
         }
 
         // Log method completion
-        error_log("[Accomodation Guest SMS] === SMS process completed for guest_id: {$guest_id} ===");
+        error_log("[Accommodation Guest SMS] === SMS process completed for guest_id: {$guest_id} ===");
     }
 
     private static function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
@@ -1426,171 +1165,7 @@ class VMS_Accomodation extends Base
             error_log("[Visit Registration Email] Exception: " . $e->getMessage());
             error_log("[Visit Registration Email] Trace: " . $e->getTraceAsString());
         }
-    }
-
-    /**
-     * Send email notifications for courtesy visit registration (safe + logged)
-     */
-    private static function send_courtesy_visit_registration_emails(
-        $guest_first_name,
-        $guest_last_name,
-        $guest_email,
-        $guest_receive_emails,
-        $visit_date,
-        $status
-    ) 
-    {
-        try {
-            error_log("[Courtesy Visit Email] Starting send_courtesy_visit_registration_emails()");
-
-            $guest_first_name = $guest_first_name ?: '[Unknown Guest]';
-            $guest_last_name  = $guest_last_name ?: '';
-            $formatted_date   = !empty($visit_date) ? date('F j, Y', strtotime($visit_date)) : '[Unknown Date]';
-            $status_text      = ($status === 'approved') ? 'approved' : 'pending approval';
-
-            // --- GUEST EMAIL ---
-            if ($guest_receive_emails === 'yes' && !empty($guest_email) && is_email($guest_email)) {
-                $subject = 'Courtesy Visit Registration Confirmation - Nyeri Club';
-                $message  = "Dear {$guest_first_name},\n\n";
-                $message .= "Your courtesy visit to Nyeri Club has been registered successfully.\n\n";
-                $message .= "Visit Details:\n";
-                $message .= "Date: {$formatted_date}\n";
-                $message .= "Type: Courtesy Visit\n";
-                $message .= "Status: " . ucfirst($status_text) . "\n\n";
-                $message .= ($status === 'approved')
-                    ? "Your visit has been approved. Please present a valid ID when you arrive.\n\n"
-                    : "Your visit is currently pending approval. You will receive another email once approved.\n\n";
-                $message .= "Thank you for choosing Nyeri Club.\n\n";
-                $message .= "Best regards,\nNyeri Club Visitor Management System";
-
-                error_log("[Courtesy Visit Email] Sending guest email to {$guest_email}");
-                if (!wp_mail($guest_email, $subject, $message)) {
-                    error_log("[Courtesy Visit Email] wp_mail() returned false for guest_email={$guest_email}");
-                } else {
-                    error_log("[Courtesy Visit Email] Guest email sent successfully to {$guest_email}");
-                }
-            } else {
-                error_log("[Courtesy Visit Email] Skipped guest email (opt-out or invalid email)");
-            }
-
-            // --- ADMIN EMAIL ---
-            $admin_email = get_option('admin_email');
-            if (!empty($admin_email) && is_email($admin_email)) {
-                $subject = 'New Courtesy Visit Registration - Nyeri Club';
-                $message  = "Hello Admin,\n\n";
-                $message .= "A new courtesy visit has been registered:\n\n";
-                $message .= "Guest Details:\n";
-                $message .= "Name: {$guest_first_name} {$guest_last_name}\n";
-                $message .= "Email: {$guest_email}\n";
-                $message .= "Visit Date: {$formatted_date}\n";
-                $message .= "Type: Courtesy Visit\n";
-                $message .= "Status: " . ucfirst($status_text) . "\n\n";
-                $message .= "Please review this registration in the system.\n\n";
-                $message .= "Nyeri Club Visitor Management System";
-
-                error_log("[Courtesy Visit Email] Sending admin email to {$admin_email}");
-                if (!wp_mail($admin_email, $subject, $message)) {
-                    error_log("[Courtesy Visit Email] wp_mail() returned false for admin_email={$admin_email}");
-                } else {
-                    error_log("[Courtesy Visit Email] Admin email sent successfully to {$admin_email}");
-                }
-            } else {
-                error_log("[Courtesy Visit Email] Skipped admin email (invalid admin email)");
-            }
-
-        } catch (Throwable $e) {
-            error_log("[Courtesy Visit Email] Exception: " . $e->getMessage());
-            error_log("[Courtesy Visit Email] Trace: " . $e->getTraceAsString());
-        }
-    }
-
-    /**
-     * Calculate the preliminary visit status for a guest.
-     * 
-     * Rules:
-     * - Max 4 visits per month.
-     * - Max 12 visits per year.
-     * - Approved visits (future) and attended visits (past) both count.
-     * 
-     * Adds structured logs for visibility.
-     */
-    private static function calculate_preliminary_visit_status(int $guest_id, string $visit_date): string
-    {
-        global $wpdb;
-
-        $function = '[calculate_preliminary_visit_status]';
-        error_log("$function Starting check for guest_id=$guest_id, visit_date=$visit_date");
-
-        try {
-            // Basic validation
-            if (empty($guest_id) || empty($visit_date)) {
-                error_log("$function Invalid input: guest_id or visit_date is empty");
-                return 'unapproved';
-            }
-
-            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-            $monthly_limit = 4;
-            $yearly_limit = 12;
-            $today = date('Y-m-d');
-
-            // --- Date Ranges ---
-            $month_start = date('Y-m-01', strtotime($visit_date));
-            $month_end   = date('Y-m-t', strtotime($visit_date));
-            $year_start  = date('Y-01-01', strtotime($visit_date));
-            $year_end    = date('Y-12-31', strtotime($visit_date));
-
-            error_log("$function Month range: $month_start to $month_end");
-            error_log("$function Year range: $year_start to $year_end");
-
-            // --- Monthly Visits Count ---
-            $monthly_visits = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $guest_visits_table 
-                WHERE guest_id = %d AND visit_date BETWEEN %s AND %s 
-                AND (
-                    (status = 'approved' AND visit_date >= %s)
-                    OR (visit_date < %s AND sign_in_time IS NOT NULL)
-                )",
-                $guest_id, $month_start, $month_end, $today, $today
-            ));
-
-            // --- Yearly Visits Count ---
-            $yearly_visits = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $guest_visits_table 
-                WHERE guest_id = %d AND visit_date BETWEEN %s AND %s 
-                AND (
-                    (status = 'approved' AND visit_date >= %s)
-                    OR (visit_date < %s AND sign_in_time IS NOT NULL)
-                )",
-                $guest_id, $year_start, $year_end, $today, $today
-            ));
-
-            // Safety defaults
-            $monthly_visits = intval($monthly_visits);
-            $yearly_visits  = intval($yearly_visits);
-
-            error_log("$function Monthly visits: $monthly_visits | Yearly visits: $yearly_visits");
-
-            // --- Decision Logic ---
-            if (($monthly_visits + 1) > $monthly_limit) {
-                error_log("$function Result: UNAPPROVED (monthly limit exceeded)");
-                return 'unapproved';
-            }
-
-            if (($yearly_visits + 1) > $yearly_limit) {
-                error_log("$function Result: UNAPPROVED (yearly limit exceeded)");
-                return 'unapproved';
-            }
-
-            error_log("$function Result: APPROVED (within limits)");
-            return 'approved';
-
-        } catch (Throwable $e) {
-            error_log("$function Exception: " . $e->getMessage());
-            error_log("$function Trace: " . $e->getTraceAsString());
-            return 'unapproved';
-        }
-    }
-    
+    }    
 
     // Handle guest update via AJAX
     public static function handle_guest_update()
@@ -1755,7 +1330,7 @@ class VMS_Accomodation extends Base
      */
     public static function handle_guest_deletion()
     {
-        $function = '[handle_guest_deletion]';
+        $function = '[handle_accommodation_guest_deletion]';
         error_log("$function Function triggered.");
 
         try {
@@ -1773,8 +1348,8 @@ class VMS_Accomodation extends Base
             }
 
             global $wpdb;
-            $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-            $visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
+            $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
 
             error_log("$function Checking existence of guest_id=$guest_id in $guests_table");
 
@@ -1829,98 +1404,23 @@ class VMS_Accomodation extends Base
             wp_send_json_error(['messages' => ['An unexpected error occurred during guest deletion.']]);
         }
     }
-
-    public static function get_guests_by_host($host_member_id) 
-    {
-        global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-
-        // Join to also fetch last visit date if needed
-        $sql = $wpdb->prepare("
-            SELECT g.*, gv.visit_date, gv.sign_in_time, gv.sign_out_time
-            FROM $guests_table g
-            LEFT JOIN $guest_visits_table gv ON gv.guest_id = g.id AND gv.host_member_id = %d
-            WHERE gv.host_member_id = %d
-            ORDER BY g.created_at DESC
-        ", $host_member_id, $host_member_id);
-
-        return $wpdb->get_results($sql);
-    }
-
-    /**
-     * Get paginated guest visits by host member ID
-     */
-    public static function get_paginated_guest_visits($host_member_id, $per_page = 10, $offset = 0) 
-    {
-        global $wpdb;
-        $guest_visits_table = $wpdb->prefix . 'vms_guest_visits';
-        $guests_table = $wpdb->prefix . 'vms_guests';
-
-        $sql = $wpdb->prepare("
-            SELECT gv.*, g.first_name, g.last_name, gv.id as visit_id
-            FROM $guest_visits_table gv
-            LEFT JOIN $guests_table g ON g.id = gv.guest_id
-            WHERE gv.host_member_id = %d
-            ORDER BY gv.visit_date DESC, gv.created_at DESC
-            LIMIT %d OFFSET %d
-        ", $host_member_id, $per_page, $offset);
-
-        return $wpdb->get_results($sql);
-    }
-
-    /**
-     * Count total guest visits for a host
-     */
-    public static function count_guest_visits($host_member_id) 
-    {
-        global $wpdb;
-        $guest_visits_table = $wpdb->prefix . 'vms_guest_visits';
-
-        return (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $guest_visits_table WHERE host_member_id = %d",
-            $host_member_id
-        ));
-    }   
-
-    /**
-     * Updated auto_update_visit_statuses to handle cancelled visits properly
-     */
-    public static function auto_update_visit_statuses(): void
-    {
-        global $wpdb;
-        error_log('Auto update visit statuses');
-        
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-        $monthly_limit = 4;
-        $yearly_limit = 12;
-        
-        // Get all active guests
-        $guest_ids = $wpdb->get_col("SELECT id FROM $guests_table WHERE guest_status = 'active'");
-        
-        foreach ($guest_ids as $guest_id) {
-            // Use the new recalculate function for consistency
-            self::recalculate_guest_visit_statuses($guest_id);
-        }
-    }   
-
+   
     /**
      * Automatically sign out guests at midnight for the current day
      */
     public static function auto_sign_out_guests()
     {
         global $wpdb;
-        error_log('Auto sign out guests');
+        error_log('Auto sign out accommodation guests');
         
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
         
         // Get yesterday's date
         $yesterday = date('Y-m-d', strtotime('-1 day', current_time('timestamp')));
         
         $visits = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, guest_id, host_member_id, visit_date
+            "SELECT id, guest_id, visit_date
             FROM $guest_visits_table
             WHERE sign_in_time IS NOT NULL
             AND sign_out_time IS NULL
@@ -1949,14 +1449,7 @@ class VMS_Accomodation extends Base
                 error_log("Failed to sign out guest visit ID: {$visit->id}");
             } else {
                 error_log("Signed out guest visit ID: {$visit->id}");
-            }
-            
-            // Re-evaluate guest status
-            $guest_status = self::calculate_guest_status(
-                $visit->guest_id,
-                $visit->host_member_id,
-                $visit->visit_date
-            );
+            }          
             
             // Update guest status
             $wpdb->update(
@@ -1968,41 +1461,7 @@ class VMS_Accomodation extends Base
             );
         }
     }
-
-    /**
-     * Reset monthly guest limits (only for automatically suspended guests)
-     */
-    public static function reset_monthly_limits()
-    {
-        global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        // Only reset status for guests who are automatically suspended but have active guest_status
-        $wpdb->query(
-            "UPDATE $guests_table
-            SET status = 'approved'
-            WHERE status = 'suspended'
-            AND guest_status = 'active'"
-        );
-    }
-
-    /**
-     * Reset yearly guest limits (only for automatically suspended guests)
-     */
-    public static function reset_yearly_limits()
-    {
-        global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        // Only reset status for guests who are automatically suspended but have active guest_status
-        $wpdb->query(
-            "UPDATE $guests_table
-            SET status = 'approved'
-            WHERE status = 'suspended'
-            AND guest_status = 'active'"
-        );
-    }
-
+    
     /**
      * Verify AJAX request (placeholder, implement as needed)
      */

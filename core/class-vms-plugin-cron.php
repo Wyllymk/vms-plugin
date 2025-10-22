@@ -26,14 +26,15 @@ class VMS_Cron_Manager
      * @var array<string, string>
      */
     private static array $cron_jobs = [
-        'cleanup_old_sms_logs'                    => 'yearly',
-        'check_sms_delivery_status'               => 'hourly',
-        'sms_balance_cron'                        => 'hourly',
-        'auto_update_visit_status_at_midnight'    => 'daily',
-        'auto_sign_out_guests_at_midnight'        => 'daily',
-        'auto_sign_out_recip_members_at_midnight' => 'daily',
-        'reset_monthly_guest_limits'              => 'monthly',
-        'reset_yearly_guest_limits'               => 'yearly',
+        'cleanup_old_sms_logs'                                  => 'yearly',
+        'check_sms_delivery_status'                             => 'hourly',
+        'sms_balance_cron'                                      => 'hourly',
+        'auto_update_visit_status_at_midnight'                  => 'daily',
+        'auto_sign_out_accommodation_guests_at_midnight'        => 'daily',
+        'auto_sign_out_guests_at_midnight'                      => 'daily',
+        'auto_sign_out_recip_members_at_midnight'               => 'daily',
+        'reset_monthly_guest_limits'                            => 'monthly',
+        'reset_yearly_guest_limits'                             => 'yearly',
     ];
 
     /**
@@ -113,6 +114,7 @@ class VMS_Cron_Manager
 
         return match ($hook) {
             'auto_update_visit_status_at_midnight',
+            'auto_sign_out_accommodation_guests_at_midnight',
             'auto_sign_out_guests_at_midnight',
             'auto_sign_out_recip_members_at_midnight' =>
                 strtotime('tomorrow midnight', $now),

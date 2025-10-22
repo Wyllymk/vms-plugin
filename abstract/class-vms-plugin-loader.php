@@ -198,10 +198,16 @@ final class Loader extends Base
         VMS_Guest::get_instance()->init();  
 
         /**
-         * Load accomodation module.
-         * Handles accomodation functionalities.
+         * Load accommodation module.
+         * Handles accommodation functionalities.
          */
-        VMS_Accomodation::get_instance()->init();  
+        VMS_Accommodation::get_instance()->init();  
+
+        /**
+         * Load suppliers module.
+         * Handles suppliers functionalities.
+         */
+        VMS_Suppliers::get_instance()->init(); 
         
         /**
          * Load member module.

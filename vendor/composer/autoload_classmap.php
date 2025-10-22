@@ -60,7 +60,7 @@ return array(
     'WyllyMk\\VMS\\Base' => $baseDir . '/abstract/class-vms-plugin-base.php',
     'WyllyMk\\VMS\\Loader' => $baseDir . '/abstract/class-vms-plugin-loader.php',
     'WyllyMk\\VMS\\Singleton' => $baseDir . '/abstract/class-vms-plugin-singleton.php',
-    'WyllyMk\\VMS\\VMS_Accomodation' => $baseDir . '/modules/class-vms-plugin-accomodation.php',
+    'WyllyMk\\VMS\\VMS_Accommodation' => $baseDir . '/modules/class-vms-plugin-accomodation.php',
     'WyllyMk\\VMS\\VMS_Admin' => $baseDir . '/admin/class-vms-plugin-admin.php',
     'WyllyMk\\VMS\\VMS_Clubs' => $baseDir . '/modules/class-vms-plugin-clubs.php',
     'WyllyMk\\VMS\\VMS_Config' => $baseDir . '/core/class-vms-plugin-config.php',
