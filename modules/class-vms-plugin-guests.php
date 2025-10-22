@@ -1048,7 +1048,7 @@ class VMS_Guest extends Base
     /**
      * NEW: Send guest status change email notification
      */
-    private static function send_guest_status_change_email(array $guest_data, string $old_status, string $new_status): void
+    public static function send_guest_status_change_email(array $guest_data, string $old_status, string $new_status): void
     {
         if ($guest_data['receive_emails'] !== 'yes') {
             return;
@@ -1099,7 +1099,7 @@ class VMS_Guest extends Base
      * @param string $old_status  Previous status
      * @param string $new_status  New status
      */
-    private static function send_guest_status_change_sms(array $guest_data, string $old_status, string $new_status): void
+    public static function send_guest_status_change_sms(array $guest_data, string $old_status, string $new_status): void
     {
         // Ensure required data exists
         if (empty($guest_data['phone_number']) || ($guest_data['receive_messages'] ?? 'no') !== 'yes') {
@@ -2562,8 +2562,8 @@ class VMS_Guest extends Base
         $id_number        = sanitize_text_field($_POST['id_number'] ?? '');
         $courtesy         = sanitize_textarea_field($_POST['courtesy'] ?? '');
         $guest_status     = sanitize_text_field($_POST['guest_status'] ?? 'active');
-        $receive_messages = 'yes';
-        $receive_emails   = 'yes';
+        $receive_messages = isset($_POST['receive_messages']) ? 'yes' : 'no';
+        $receive_emails   = isset($_POST['receive_emails']) ? 'yes' : 'no';
 
         // Validate required fields
         if (empty($guest_id)) $errors[] = 'Guest ID is required';

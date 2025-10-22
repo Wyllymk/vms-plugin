@@ -196,6 +196,12 @@ final class Loader extends Base
          * Handles guest functionalities.
          */
         VMS_Guest::get_instance()->init();  
+
+        /**
+         * Load accomodation module.
+         * Handles accomodation functionalities.
+         */
+        VMS_Accomodation::get_instance()->init();  
         
         /**
          * Load member module.

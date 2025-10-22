@@ -30,8 +30,8 @@ class VMS_Page_Manager
         ['title' => 'Guest Details', 'template' => 'page-templates/page-guest-details.php'],
         ['title' => 'Suppliers', 'template' => 'page-templates/page-suppliers.php'],
         ['title' => 'Supplier Details', 'template' => 'page-templates/page-supplier-details.php'],
-        ['title' => 'Accomodation', 'template' => 'page-templates/page-accomodation.php'],
-        ['title' => 'Accomodation Details', 'template' => 'page-templates/page-accomodation-details.php'],
+        ['title' => 'Accommodation', 'template' => 'page-templates/page-accommodation.php'],
+        ['title' => 'Accommodation Details', 'template' => 'page-templates/page-accommodation-details.php'],
         ['title' => 'Reciprocating Members', 'template' => 'page-templates/page-reciprocating-members.php'],
         ['title' => 'Reciprocating Member Details', 'template' => 'page-templates/page-reciprocating-member-details.php'],
         ['title' => 'Clubs', 'template' => 'page-templates/page-clubs.php'],
@@ -80,7 +80,7 @@ class VMS_Page_Manager
             'terms-conditions', 'profile', 'dashboard', 'employees',
             'details', 'members', 'employee-details', 'guests',
             'guest-details', 'suppliers', 'supplier-details',
-            'accomodation', 'accomodation-details', 'clubs',
+            'accommodation', 'accommodation-details', 'clubs',
             'reciprocating-members', 'reciprocating-member-details',
             'settings'
         ];
