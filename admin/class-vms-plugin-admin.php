@@ -1076,7 +1076,6 @@ class VMS_Admin extends Base
         return ucfirst($role);
     }
 
-
     /**
      * Delete SMS log
      */

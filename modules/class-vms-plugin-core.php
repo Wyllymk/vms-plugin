@@ -47,11 +47,9 @@ class VMS_Core extends Base
      * Setup guest management related hooks
      */
     private static function setup_core_management_hooks(): void
-    {
-        // Reciprocating Member
-        // add_action('wp_ajax_reciprocating_member_registration', [self::class, 'handle_reciprocating_registration']); 
+    {       
         add_action('admin_init', [self::class, 'handle_status_setup']);
-        add_filter('cron_schedules', [self::class, 'register_custom_intervals']);
+        add_filter('cron_schedules', [self::class, 'register_custom_intervals']);        
     }
     
     /**

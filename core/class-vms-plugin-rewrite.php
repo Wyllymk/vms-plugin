@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class VMS_Rewrite_Manager
+class VMS_Rewrite_Manager extends Base
 {
     /**
      * Add custom rewrite rules

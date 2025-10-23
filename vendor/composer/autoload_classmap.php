@@ -73,10 +73,13 @@ return array(
     'WyllyMk\\VMS\\VMS_Page_Manager' => $baseDir . '/admin/class-vms-plugin-pages.php',
     'WyllyMk\\VMS\\VMS_Plugin_Activator' => $baseDir . '/core/class-vms-plugin-activator.php',
     'WyllyMk\\VMS\\VMS_Plugin_Deactivator' => $baseDir . '/core/class-vms-plugin-deactivator.php',
+    'WyllyMk\\VMS\\VMS_Profile' => $baseDir . '/modules/class-vms-plugin-profile.php',
     'WyllyMk\\VMS\\VMS_Reciprocation' => $baseDir . '/modules/class-vms-plugin-reciprocation.php',
     'WyllyMk\\VMS\\VMS_Reports' => $baseDir . '/modules/class-vms-plugin-reports.php',
     'WyllyMk\\VMS\\VMS_Rewrite_Manager' => $baseDir . '/core/class-vms-plugin-rewrite.php',
     'WyllyMk\\VMS\\VMS_Roles' => $baseDir . '/security/class-vms-plugin-roles.php',
     'WyllyMk\\VMS\\VMS_SMS' => $baseDir . '/integrations/class-vms-plugin-sms.php',
+    'WyllyMk\\VMS\\VMS_Security' => $baseDir . '/security/class-vms-plugin-security.php',
+    'WyllyMk\\VMS\\VMS_Settings' => $baseDir . '/modules/class-vms-plugin-settings.php',
     'WyllyMk\\VMS\\VMS_Suppliers' => $baseDir . '/modules/class-vms-plugin-suppliers.php',
 );

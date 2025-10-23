@@ -16,7 +16,7 @@ defined('ABSPATH') || exit;
  * Registers custom roles and adds capabilities.
  * Uses static-only methods (no Singleton needed).
  */
-class VMS_Roles {
+class VMS_Roles extends Base{
 
     /**
      * Custom roles definition.

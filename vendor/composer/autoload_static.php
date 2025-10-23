@@ -92,11 +92,14 @@ class ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a
         'WyllyMk\\VMS\\VMS_Page_Manager' => __DIR__ . '/../..' . '/admin/class-vms-plugin-pages.php',
         'WyllyMk\\VMS\\VMS_Plugin_Activator' => __DIR__ . '/../..' . '/core/class-vms-plugin-activator.php',
         'WyllyMk\\VMS\\VMS_Plugin_Deactivator' => __DIR__ . '/../..' . '/core/class-vms-plugin-deactivator.php',
+        'WyllyMk\\VMS\\VMS_Profile' => __DIR__ . '/../..' . '/modules/class-vms-plugin-profile.php',
         'WyllyMk\\VMS\\VMS_Reciprocation' => __DIR__ . '/../..' . '/modules/class-vms-plugin-reciprocation.php',
         'WyllyMk\\VMS\\VMS_Reports' => __DIR__ . '/../..' . '/modules/class-vms-plugin-reports.php',
         'WyllyMk\\VMS\\VMS_Rewrite_Manager' => __DIR__ . '/../..' . '/core/class-vms-plugin-rewrite.php',
         'WyllyMk\\VMS\\VMS_Roles' => __DIR__ . '/../..' . '/security/class-vms-plugin-roles.php',
         'WyllyMk\\VMS\\VMS_SMS' => __DIR__ . '/../..' . '/integrations/class-vms-plugin-sms.php',
+        'WyllyMk\\VMS\\VMS_Security' => __DIR__ . '/../..' . '/security/class-vms-plugin-security.php',
+        'WyllyMk\\VMS\\VMS_Settings' => __DIR__ . '/../..' . '/modules/class-vms-plugin-settings.php',
         'WyllyMk\\VMS\\VMS_Suppliers' => __DIR__ . '/../..' . '/modules/class-vms-plugin-suppliers.php',
     );
 

@@ -55,7 +55,6 @@ class VMS_SMS extends Base
     {
         add_action('wp_ajax_refresh_sms_balance', [self::class, 'refresh_sms_balance']);
         add_action('wp_ajax_test_sms_connection', [self::class, 'test_sms_connection']);
-        add_action('wp_ajax_nopriv_vms_status_callback', [self::class, 'handle_status_callback']);
         add_action('wp_ajax_vms_status_callback', [self::class, 'handle_status_callback']);
         
         // CRON
@@ -471,7 +470,6 @@ class VMS_SMS extends Base
         return $digits;
     }
 
-
     /**
      * Log SMS message to database
      */
@@ -566,87 +564,186 @@ class VMS_SMS extends Base
     }
 
     /**
-     * NEW: Check delivery status for pending SMS
+     * Check and update delivery status for pending SMS messages.
+     *
+     * This method should be called periodically (e.g. via WP-Cron) to verify
+     * the delivery status of messages that were recently sent but have not yet 
+     * reached a final state (delivered or failed).
+     *
+     * It queries the SMS log table for messages with 'sent' or 'queued' status 
+     * from the last 24 hours, then checks their delivery status via the SMS 
+     * provider’s API (handled by self::get_delivery_report()).
+     *
+     * @return void
      */
     public static function check_pending_sms_delivery(): void
     {
         global $wpdb;
-        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
-        // Get messages sent in the last 24 hours that are still pending
-        $pending_messages = $wpdb->get_results(
-            "SELECT message_id FROM {$table_name} 
-            WHERE status IN ('sent', 'queued') 
-            AND message_id IS NOT NULL 
-            AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-            LIMIT 50"
-        );
-        
-        foreach ($pending_messages as $message) {
-            // Get delivery report
-            $delivery_report = self::get_delivery_report($message->message_id);
 
-            if ($delivery_report && isset($delivery_report['status'])) {
-                $new_status = strtolower($delivery_report['status']);
+        try {
+            // Get SMS logs table name from config
+            $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+            error_log('[VMS_SMS] Starting check_pending_sms_delivery()...');
 
-                // Skip final states (do not overwrite or recheck)
-                if (in_array($new_status, ['delivrd', 'failed'], true)) {
-                    self::update_sms_status($message->message_id, $new_status);
-                } else {
-                    self::update_sms_status($message->message_id, $new_status);
+            // Fetch pending messages (sent or queued) created within the last 24 hours
+            $pending_messages = $wpdb->get_results(
+                "SELECT message_id 
+                FROM {$table_name} 
+                WHERE status IN ('sent', 'queued')
+                AND message_id IS NOT NULL
+                AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                LIMIT 50"
+            );
+
+            // Log the number of messages found
+            $count = count($pending_messages);
+            error_log("[VMS_SMS] Found {$count} pending message(s) to check.");
+
+            if (empty($pending_messages)) {
+                error_log('[VMS_SMS] No pending SMS messages to process. Exiting.');
+                return;
+            }
+
+            // Process each pending message
+            foreach ($pending_messages as $message) {
+                try {
+                    error_log("[VMS_SMS] Checking delivery report for message_id: {$message->message_id}");
+
+                    // Fetch delivery report from SMS provider API
+                    $delivery_report = self::get_delivery_report($message->message_id);
+
+                    // Log the raw response for debugging
+                    error_log('[VMS_SMS] Delivery report response: ' . print_r($delivery_report, true));
+
+                    if ($delivery_report && isset($delivery_report['status'])) {
+                        $new_status = strtolower($delivery_report['status']);
+                        error_log("[VMS_SMS] New status for message {$message->message_id}: {$new_status}");
+
+                        // Update only if valid or changed
+                        self::update_sms_status($message->message_id, $new_status);
+                    } else {
+                        error_log("[VMS_SMS WARNING] Missing or invalid delivery report for message_id: {$message->message_id}");
+                    }
+
+                    // Small delay (0.2s) to prevent API rate limiting
+                    usleep(200000);
+
+                } catch (Throwable $e) {
+                    // Log any exception for this specific message
+                    error_log("[VMS_SMS ERROR] Exception while checking message_id {$message->message_id}: " . $e->getMessage());
                 }
             }
 
-            // Small delay to prevent API rate limiting
-            usleep(200000); // 0.2 seconds
+            error_log('[VMS_SMS] Completed check_pending_sms_delivery() run.');
+
+        } catch (Throwable $e) {
+            // Global catch to prevent fatal errors in cron or AJAX
+            error_log('[VMS_SMS ERROR] Fatal exception in check_pending_sms_delivery(): ' . $e->getMessage());
         }
     }
 
 
     /**
-     * Fetch and save SMS balance
+     * Fetch the current SMS account balance from the API and store it in WordPress options.
+     *
+     * This function:
+     *  - Retrieves stored API credentials.
+     *  - Calls the SMS provider’s `/balance` endpoint.
+     *  - Saves the current balance, currency, and timestamp to WordPress options.
+     * 
+     * Typically scheduled to run periodically via WP-Cron (e.g. hourly).
+     *
+     * @return void
      */
     public static function fetch_and_save_sms_balance(): void
     {
-        $api_key = get_option('vms_sms_api_key', '');
-        $api_secret = get_option('vms_sms_api_secret', '');
-        
-        if (empty($api_key) || empty($api_secret)) {
-            error_log('SMS API credentials not configured');
-            return;
-        }
+        try {
+            error_log('[VMS_SMS] Starting fetch_and_save_sms_balance()...');
 
-        $auth = base64_encode($api_key . ':' . $api_secret);
+            // ------------------------------------------------------------
+            // Step 1: Retrieve stored API credentials
+            // ------------------------------------------------------------
+            $api_key    = get_option('vms_sms_api_key', '');
+            $api_secret = get_option('vms_sms_api_secret', '');
 
-        $response = wp_remote_get(self::$api_base_url . '/balance', [
-            'headers' => [
-                'Authorization' => 'Basic ' . $auth,
-                'Content-Type' => 'application/json'
-            ],
-            'timeout' => 15
-        ]);
-
-        if (is_wp_error($response)) {
-            error_log('Error fetching SMS balance: ' . $response->get_error_message());
-            return;
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (isset($data['balance'])) {
-            update_option('vms_sms_balance', $data['balance']);
-            update_option('vms_sms_last_check', current_time('mysql'));
-            
-            // Store additional balance info
-            if (isset($data['converted_balance'])) {
-                update_option('vms_sms_converted_balance', $data['converted_balance']);
+            if (empty($api_key) || empty($api_secret)) {
+                error_log('[VMS_SMS WARNING] SMS API credentials not configured. Aborting balance fetch.');
+                return;
             }
-            if (isset($data['currency'])) {
-                update_option('vms_sms_currency', $data['currency']);
+
+            // Encode credentials for Basic Auth
+            $auth = base64_encode($api_key . ':' . $api_secret);
+
+            // ------------------------------------------------------------
+            // Step 2: Send API request to fetch balance
+            // ------------------------------------------------------------
+            $url = self::$api_base_url . '/balance';
+            error_log("[VMS_SMS] Fetching SMS balance from: {$url}");
+
+            $response = wp_remote_get($url, [
+                'headers' => [
+                    'Authorization' => 'Basic ' . $auth,
+                    'Content-Type'  => 'application/json'
+                ],
+                'timeout' => 15,
+            ]);
+
+            // ------------------------------------------------------------
+            // Step 3: Handle network or transport errors
+            // ------------------------------------------------------------
+            if (is_wp_error($response)) {
+                error_log('[VMS_SMS ERROR] Error fetching SMS balance: ' . $response->get_error_message());
+                return;
             }
-        } else {
-            error_log('Failed to retrieve SMS balance. Response: ' . $body);
+
+            // ------------------------------------------------------------
+            // Step 4: Decode API response
+            // ------------------------------------------------------------
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log('[VMS_SMS ERROR] Failed to decode balance API response: ' . json_last_error_msg());
+                error_log('[VMS_SMS DEBUG] Raw response: ' . $body);
+                return;
+            }
+
+            error_log('[VMS_SMS DEBUG] Balance API response: ' . print_r($data, true));
+
+            // ------------------------------------------------------------
+            // Step 5: Validate and store response data
+            // ------------------------------------------------------------
+            if (isset($data['balance'])) {
+                $balance          = $data['balance'];
+                $converted_balance = $data['converted_balance'] ?? null;
+                $currency         = $data['currency'] ?? null;
+
+                // Save balance details to WP options
+                update_option('vms_sms_balance', $balance);
+                update_option('vms_sms_last_check', current_time('mysql'));
+
+                if (!is_null($converted_balance)) {
+                    update_option('vms_sms_converted_balance', $converted_balance);
+                }
+                if (!is_null($currency)) {
+                    update_option('vms_sms_currency', $currency);
+                }
+
+                error_log("[VMS_SMS] SMS balance updated successfully. Balance: {$balance}, Currency: {$currency}");
+
+            } else {
+                error_log('[VMS_SMS ERROR] Missing "balance" key in API response.');
+                error_log('[VMS_SMS DEBUG] Raw response: ' . $body);
+            }
+
+            error_log('[VMS_SMS] Completed fetch_and_save_sms_balance() successfully.');
+
+        } catch (Throwable $e) {
+            // ------------------------------------------------------------
+            // Step 6: Global catch block for unexpected errors
+            // ------------------------------------------------------------
+            error_log('[VMS_SMS FATAL] Exception in fetch_and_save_sms_balance(): ' . $e->getMessage());
+            error_log('[VMS_SMS TRACE] ' . $e->getTraceAsString());
         }
     }
 
@@ -715,7 +812,6 @@ class VMS_SMS extends Base
         }
     }
 
-
     /**
      * Send test SMS
      */
@@ -737,46 +833,147 @@ class VMS_SMS extends Base
     }
 
     /**
-     * Handle status callback from SMS Leopard
+     * Handle incoming SMS delivery status callbacks from SMS Leopard.
+     *
+     * This endpoint is typically called by the SMS provider when a message’s
+     * delivery status changes (e.g., from "queued" → "delivrd" or "failed").
+     *
+     * Flow:
+     *  1. Verify request authenticity using a shared secret.
+     *  2. Validate required fields (message ID and status).
+     *  3. Update the SMS status in the local database.
+     *  4. Return an HTTP 200 response to acknowledge receipt.
+     *
+     * Security:
+     *  - Uses a secret key (stored in WordPress options) to prevent unauthorized access.
+     *  - All inputs are sanitized.
      */
     public static function handle_status_callback(): void
     {
-        $status_secret = get_option('vms_status_secret', '');
-        
-        if (!empty($status_secret)) {
-            $received_secret = $_POST['status_secret'] ?? '';
-            if ($received_secret !== $status_secret) {
-                wp_die('Unauthorized', 'Unauthorized', ['response' => 403]);
-            }
-        }
+        try {
+            error_log('[VMS_SMS] Received SMS status callback request.');
 
-        $message_id = $_POST['id'] ?? '';
-        $status = $_POST['status'] ?? '';
-        
-        if (!empty($message_id) && !empty($status)) {
-            self::update_sms_status($message_id, strtolower($status));
+            // ------------------------------------------------------------
+            // Step 1: Authenticate using a shared secret (if configured)
+            // ------------------------------------------------------------
+            $status_secret = get_option('vms_status_secret', '');
+
+            if (!empty($status_secret)) {
+                $received_secret = sanitize_text_field($_POST['status_secret'] ?? '');
+
+                if ($received_secret !== $status_secret) {
+                    error_log('[VMS_SMS WARNING] Unauthorized callback attempt detected.');
+                    wp_die('Unauthorized', 'Unauthorized', ['response' => 403]);
+                }
+            } else {
+                error_log('[VMS_SMS NOTICE] No status secret set. Proceeding without authentication.');
+            }
+
+            // ------------------------------------------------------------
+            // Step 2: Validate required POST fields
+            // ------------------------------------------------------------
+            $message_id = sanitize_text_field($_POST['id'] ?? '');
+            $status     = sanitize_text_field($_POST['status'] ?? '');
+
+            if (empty($message_id) || empty($status)) {
+                error_log('[VMS_SMS ERROR] Missing required callback fields: message_id or status.');
+                http_response_code(400);
+                exit;
+            }
+
+            // ------------------------------------------------------------
+            // Step 3: Normalize and update SMS delivery status
+            // ------------------------------------------------------------
+            $normalized_status = strtolower($status);
+            error_log("[VMS_SMS DEBUG] Updating message {$message_id} to status '{$normalized_status}'.");
+
+            self::update_sms_status($message_id, $normalized_status);
+
+            // ------------------------------------------------------------
+            // Step 4: Return 200 OK to acknowledge callback
+            // ------------------------------------------------------------
+            http_response_code(200);
+            error_log("[VMS_SMS] Status callback handled successfully for message {$message_id}.");
+            exit;
+
+        } catch (Throwable $e) {
+            // ------------------------------------------------------------
+            // Step 5: Log any exceptions without breaking the response
+            // ------------------------------------------------------------
+            error_log('[VMS_SMS FATAL] Exception in handle_status_callback(): ' . $e->getMessage());
+            error_log('[VMS_SMS TRACE] ' . $e->getTraceAsString());
+
+            // Respond gracefully to the sender
+            http_response_code(500);
+            exit;
         }
-        
-        // Respond with 200 OK
-        http_response_code(200);
-        echo 'OK';
-        exit;
     }
 
     /**
-     * Cleanup old SMS logs - UPDATED to clean logs older than 90 days
+     * Cleanup old SMS logs from the database.
+     *
+     * Deletes SMS log records older than the specified number of days (default: 90 days).
+     * Useful for keeping the database lean and maintaining performance.
+     *
+     * @param int $days Number of days to retain logs. Logs older than this will be deleted.
+     * @return int Number of rows deleted from the database.
      */
     public static function cleanup_old_logs(int $days = 90): int
     {
         global $wpdb;
-        $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
-        $date_threshold = date('Y-m-d H:i:s', strtotime("-{$days} days"));
-        
-        return $wpdb->query($wpdb->prepare(
-            "DELETE FROM {$table_name} WHERE created_at < %s",
-            $date_threshold
-        ));
+
+        try {
+            error_log("[VMS_SMS] Starting cleanup_old_logs() for logs older than {$days} days...");
+
+            // ------------------------------------------------------------
+            // Step 1: Get the table name
+            // ------------------------------------------------------------
+            $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
+            if (empty($table_name)) {
+                error_log('[VMS_SMS ERROR] SMS logs table name not found. Aborting cleanup.');
+                return 0;
+            }
+
+            // ------------------------------------------------------------
+            // Step 2: Calculate date threshold
+            // ------------------------------------------------------------
+            $date_threshold = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+            error_log("[VMS_SMS DEBUG] Deleting logs created before: {$date_threshold}");
+
+            // ------------------------------------------------------------
+            // Step 3: Run the DELETE query
+            // ------------------------------------------------------------
+            $deleted_count = $wpdb->query(
+                $wpdb->prepare(
+                    "DELETE FROM {$table_name} WHERE created_at < %s",
+                    $date_threshold
+                )
+            );
+
+            // ------------------------------------------------------------
+            // Step 4: Handle potential DB errors
+            // ------------------------------------------------------------
+            if ($deleted_count === false) {
+                $error_message = $wpdb->last_error ?: 'Unknown database error';
+                error_log("[VMS_SMS ERROR] Failed to clean old logs: {$error_message}");
+                return 0;
+            }
+
+            // ------------------------------------------------------------
+            // Step 5: Log cleanup summary
+            // ------------------------------------------------------------
+            error_log("[VMS_SMS] Cleanup complete. Deleted {$deleted_count} log(s) older than {$days} days.");
+
+            return (int) $deleted_count;
+
+        } catch (Throwable $e) {
+            // ------------------------------------------------------------
+            // Step 6: Catch any unexpected errors
+            // ------------------------------------------------------------
+            error_log('[VMS_SMS FATAL] Exception during cleanup_old_logs(): ' . $e->getMessage());
+            error_log('[VMS_SMS TRACE] ' . $e->getTraceAsString());
+            return 0;
+        }
     }
 
     /**
@@ -871,7 +1068,7 @@ class VMS_SMS extends Base
         return [
             'balance' => get_option('vms_sms_balance', 0),
             'converted_balance' => get_option('vms_sms_converted_balance', 0),
-            'currency' => get_option('vms_sms_currency', 'USD'),
+            'currency' => get_option('vms_sms_currency', 'KES'),
             'last_check' => get_option('vms_sms_last_check', ''),
             'formatted_balance' => 'KES ' . number_format(get_option('vms_sms_balance', 0), 2)
         ];

@@ -192,6 +192,12 @@ final class Loader extends Base
     private function load_core_components()
     {
         /**
+         * Load Profile module.
+         * Handles Profile functionalities.
+         */
+        VMS_Profile::get_instance()->init(); 
+
+        /**
          * Load guest module.
          * Handles guest functionalities.
          */
@@ -240,10 +246,16 @@ final class Loader extends Base
         VMS_Core::get_instance()->init(); 
 
         /**
-         * Load sms module.
-         * Handles sms functionalities.
+         * Load security module.
+         * Handles security functionalities.
          */
-        VMS_SMS::get_instance()->init(); 
+        VMS_Security::get_instance()->init(); 
+
+        /**
+         * Load Settings module.
+         * Handles Settings functionalities.
+         */
+        VMS_Settings::get_instance()->init();         
     }
 
     /**
@@ -263,8 +275,7 @@ final class Loader extends Base
          * Load admin pages.
          * Dashboard, settings, and management screens.
          */
-        VMS_Admin::get_instance()->init();     
-
+        VMS_Admin::get_instance()->init();   
     }
 
     /**
@@ -279,24 +290,6 @@ final class Loader extends Base
      */
     private function load_frontend_components()
     {
-        /**
-         * Load visitor registration form.
-         * Public form for visitor check-in/check-out.
-         */
-        // Frontend\Visitor_Form::instance();
-
-        /**
-         * Load visitor display.
-         * Show visitor lists and information publicly.
-         */
-        // Frontend\Visitor_Display::instance();
-
-        /**
-         * Load QR code generator.
-         * Generate QR codes for visitor badges.
-         */
-        // Frontend\QR_Generator::instance();
-
         /**
          * Load notification handler.
          * Send real-time notifications to hosts.
@@ -319,19 +312,7 @@ final class Loader extends Base
         /**
          * Load SMS integration.
          * Send SMS notifications to visitors and hosts.
-         */
-        // Integrations\SMS::instance();
-
-        /**
-         * Load calendar integration.
-         * Sync with Google Calendar, Outlook, etc.
-         */
-        // Integrations\Calendar::instance();       
-
-        /**
-         * Load webhook support.
-         * Send data to external URLs on events.
-         */
-        // Integrations\Webhooks::instance();
+         */       
+        VMS_SMS::get_instance()->init(); 
     }
 }

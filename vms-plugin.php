@@ -136,6 +136,28 @@ final class VMS_Plugin
             return;
         }
 
+        // Add this to your main plugin file or init hook
+        add_action('init', function() {
+            // Setup callback URL rewrite rule
+            add_rewrite_rule(
+                '^vms-sms-callback/?$',
+                'index.php?vms_sms_callback=1',
+                'top'
+            );
+        });
+
+        add_filter('query_vars', function($vars) {
+            $vars[] = 'vms_sms_callback';
+            return $vars;
+        });
+
+        add_action('template_redirect', function() {
+            if (get_query_var('vms_sms_callback')) {
+                VMS_SMS::get_instance()->handle_sms_delivery_callback();
+                exit;
+            }
+        });
+
         // Load plugin translations.
         load_plugin_textdomain(
             'vms-plugin',
