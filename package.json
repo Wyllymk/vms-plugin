@@ -1,17 +1,25 @@
-
 {
   "name": "vms-plugin",
   "version": "0.1.0",
   "main": "Gruntfile.js",
-  "author": "YOUR NAME HERE",
-  "scripts" : {
-    "start" : "grunt default" ,
-    "readme" : "grunt readme",
-    "i18n" : "grunt i18n"
+  "author": "Wilson",
+  "description": "A WordPress plugin for VMS — includes build automation, i18n, and readme generation.",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "start": "grunt default",
+    "readme": "grunt readme",
+    "i18n": "grunt i18n",
+    "build": "grunt build"
   },
   "devDependencies": {
-    "grunt": "~0.4.5",
+    "grunt": "^1.6.1",
+    "grunt-contrib-clean": "^2.0.1",
+    "grunt-contrib-compress": "^2.0.0",
+    "grunt-contrib-copy": "^1.0.0",
     "grunt-wp-i18n": "~0.5.0",
     "grunt-wp-readme-to-markdown": "~1.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }
