@@ -5,9 +5,6 @@ module.exports = function (grunt) {
 	grunt.initConfig({
 		pkg: grunt.file.readJSON("package.json"),
 
-		// -----------------------------
-		// Add textdomain to plugin PHP files
-		// -----------------------------
 		addtextdomain: {
 			options: {
 				textdomain: "vms-plugin",
@@ -19,19 +16,26 @@ module.exports = function (grunt) {
 				src: [
 					"*.php",
 					"**/*.php",
-					"!.git/**/*",
-					"!bin/**/*",
-					"!node_modules/**/*",
-					"!vendor/**/*",
-					"!tests/**/*",
-					"!build/**/*",
+					"!node_modules/**",
+					"!vendor/**",
+					"!tests/**",
 				],
 			},
 		},
 
-		// -----------------------------
-		// Generate README.md from readme.txt
-		// -----------------------------
+		makepot: {
+			target: {
+				options: {
+					domainPath: "/languages",
+					exclude: ["node_modules/*", "vendor/*", "tests/*"],
+					mainFile: "vms-plugin.php",
+					potFilename: "vms-plugin.pot",
+					type: "wp-plugin",
+					updateTimestamp: true,
+				},
+			},
+		},
+
 		wp_readme_to_markdown: {
 			your_target: {
 				files: {
@@ -40,93 +44,71 @@ module.exports = function (grunt) {
 			},
 		},
 
-		// -----------------------------
-		// Generate POT file for translations
-		// -----------------------------
-		makepot: {
-			target: {
-				options: {
-					domainPath: "/languages",
-					exclude: [
-						".git/*",
-						"bin/*",
-						"node_modules/*",
-						"vendor/*",
-						"tests/*",
-						"build/*",
-					],
-					mainFile: "vms-plugin.php",
-					potFilename: "vms-plugin.pot",
-					potHeaders: {
-						poedit: true,
-						"x-poedit-keywordslist": true,
-					},
-					type: "wp-plugin",
-					updateTimestamp: true,
-				},
-			},
-		},
-
-		// -----------------------------
-		// Clean build directory before packaging
-		// -----------------------------
 		clean: {
 			build: ["build/"],
 		},
 
-		// -----------------------------
-		// Copy plugin files to build directory
-		// -----------------------------
 		copy: {
 			build: {
-				expand: true,
-				src: [
-					"**",
-					"!node_modules/**",
-					"!vendor/**",
-					"!.git/**",
-					"!bin/**",
-					"!build/**",
-					"!tests/**",
-					"!Gruntfile.js",
-					"!package.json",
-					"!package-lock.json",
-					"!composer.json",
-					"!composer.lock",
+				files: [
+					{
+						expand: true,
+						src: [
+							"**",
+							"!node_modules/**",
+							"!build/**",
+							"!Gruntfile.js",
+							"!package*.json",
+							"!composer.*",
+							"!tests/**",
+						],
+						dest: "build/vms-plugin/",
+					},
 				],
-				dest: "build/vms-plugin/",
 			},
 		},
 
-		// -----------------------------
-		// Compress build directory into a ZIP
-		// -----------------------------
 		compress: {
 			build: {
 				options: {
 					archive: "build/vms-plugin.zip",
 				},
-				expand: true,
-				cwd: "build/",
-				src: ["vms-plugin/**"],
+				files: [
+					{
+						expand: true,
+						cwd: "build/vms-plugin/",
+						src: ["**"],
+						dest: "vms-plugin/",
+					},
+				],
+			},
+		},
+
+		shell: {
+			composer: {
+				command: "composer install --no-dev",
 			},
 		},
 	});
 
-	// Load required Grunt plugins
+	// Load tasks
 	grunt.loadNpmTasks("grunt-wp-i18n");
 	grunt.loadNpmTasks("grunt-wp-readme-to-markdown");
 	grunt.loadNpmTasks("grunt-contrib-clean");
 	grunt.loadNpmTasks("grunt-contrib-copy");
 	grunt.loadNpmTasks("grunt-contrib-compress");
+	grunt.loadNpmTasks("grunt-shell");
 
-	// -----------------------------
-	// Register Tasks
-	// -----------------------------
-	grunt.registerTask("default", ["i18n", "readme"]);
+	// Register tasks
 	grunt.registerTask("i18n", ["addtextdomain", "makepot"]);
 	grunt.registerTask("readme", ["wp_readme_to_markdown"]);
-	grunt.registerTask("build", ["clean", "copy", "compress"]);
+	grunt.registerTask("build", [
+		"clean",
+		"shell:composer",
+		"copy",
+		"compress",
+	]);
+	grunt.registerTask("default", ["i18n", "readme"]);
 
 	grunt.util.linefeed = "\n";
 };
