@@ -611,7 +611,7 @@ class VMS_Accommodation extends Base
             $first_name   = sanitize_text_field($_POST['first_name'] ?? '');
             $last_name    = sanitize_text_field($_POST['last_name'] ?? '');
             $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
-            $visit_date   = sanitize_text_field($_POST['visit_date'] ?? '');
+            $visit_date   = current_time('Y-m-d');
 
             error_log("[Accommodation Guest Registration] Input received: first_name={$first_name}, last_name={$last_name}, phone={$phone_number}, visit_date={$visit_date}");
 
@@ -916,7 +916,6 @@ class VMS_Accommodation extends Base
                     $guest_info->last_name,
                     $guest_info->email,
                     $guest_info->receive_emails,
-                    $host_member,
                     $visit_date,
                     $preliminary_status
                 );
@@ -927,7 +926,6 @@ class VMS_Accommodation extends Base
                     $guest_info->last_name,
                     $guest_info->phone_number,
                     $guest_info->receive_messages,
-                    $host_member,
                     $visit_date,
                     $preliminary_status
                 );
@@ -1038,49 +1036,78 @@ class VMS_Accommodation extends Base
         error_log("[Accommodation Guest SMS] === SMS process completed for guest_id: {$guest_id} ===");
     }
 
-    private static function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
+    /**
+     * Send SMS notification to guest upon visit registration
+     *
+     * This method notifies a guest via SMS when a visit is registered.
+     * It only sends the message if the guest has opted in for SMS notifications.
+     *
+     * @param int    $guest_id              The ID of the guest
+     * @param string $first_name            Guest's first name
+     * @param string $last_name             Guest's last name
+     * @param string $guest_phone           Guest's phone number
+     * @param string $guest_receive_messages Whether the guest wants to receive SMS ('yes' or 'no')
+     * @param string $visit_date            The visit date (Y-m-d)
+     * @param string $status                The visit approval status ('approved' or 'pending')
+     *
+     * @return void
+     */
+    private static function send_visit_registration_sms(
+        $guest_id,
+        $first_name,
+        $last_name,
+        $guest_phone,
+        $guest_receive_messages,
+        $visit_date,
+        $status
+    ): void 
     {
-        if ($guest_receive_messages !== 'yes' || empty($guest_phone)) {
-            return;
-        }
+        try {
+            error_log("Preparing to send visit registration SMS for guest ID {$guest_id}");
 
-        $formatted_date  = date('F j, Y', strtotime($visit_date));
-        $status_text     = ($status === 'approved') ? 'Approved' : 'Pending Approval';
-        $role            = 'guest';
-        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
-        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
-
-        
-        $guest_message = "Dear " . $first_name . ",\nYou have been booked as a visitor at Nyeri Club by " . $host_first_name . " " . $host_last_name . ". Your visit registered for $formatted_date is $status_text.";
-        $role = 'guest';
-        if ($status === 'approved') {
-            $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
-        } else {
-            $guest_message .= " You will be notified once approved.";
-        }
-
-        VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);        
-
-         // Send SMS to host if opted in
-        if ($host_member) {
-            $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
-            $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
-            $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
-            $roles                 = $host_member->roles ?? [];
-            $role                  = !empty($roles) ? $roles[0] : 'member';
-
-            if ($host_receive_messages === 'yes' && !empty($host_phone)) {
-                $host_message = "Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
-                if ($status === 'approved') {
-                    $host_message .= " Please be available to receive them.";
-                } else {
-                    $host_message .= " Pending approval due to limits.";
-                }
-
-                VMS_SMS::send_sms($host_phone, $host_message, $host_member->ID, $role);
+            // 1. Validate input and skip if SMS should not be sent
+            if ($guest_receive_messages !== 'yes') {
+                error_log("Guest {$guest_id} has opted out of SMS notifications. Skipping SMS send.");
+                return;
             }
+
+            if (empty($guest_phone)) {
+                error_log("Guest {$guest_id} has no valid phone number. Cannot send SMS.");
+                return;
+            }
+
+            // 2. Format visit date and determine status
+            $formatted_date = date('F j, Y', strtotime($visit_date));
+            $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+
+            // 3. Build message content
+            $guest_message = "Dear {$first_name},\n";
+            $guest_message .= "You have been booked as a visitor at Nyeri Club. ";
+            $guest_message .= "Your visit registered for {$formatted_date} is {$status_text}.";
+
+            if ($status === 'approved') {
+                $guest_message .= " Please present a valid ID or Passport upon arrival at the Club Reception.";
+            } else {
+                $guest_message .= " You will be notified once approved.";
+            }
+
+            $role = 'guest';
+
+            // 4. Log message before sending
+            error_log("Sending SMS to {$guest_phone} for guest ID {$guest_id}");
+            error_log("SMS content: {$guest_message}");
+
+            // 5. Send the SMS using the notification handler
+            VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);
+            error_log("SMS successfully dispatched to {$guest_phone} for guest {$guest_id}");
+           
+        } catch (Exception $e) {
+            // 6. Handle unexpected exceptions safely
+            error_log("Exception in send_visit_registration_sms for guest {$guest_id}: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
         }
     }
+
 
     /**
      * Send email notifications for visit registration (safe + logged)
@@ -1090,7 +1117,6 @@ class VMS_Accommodation extends Base
         $guest_last_name,
         $guest_email,
         $guest_receive_emails,
-        $host_member,
         $visit_date,
         $status
     ) 
@@ -1102,10 +1128,7 @@ class VMS_Accommodation extends Base
             $guest_first_name = $guest_first_name ?: '[Unknown Guest]';
             $guest_last_name  = $guest_last_name ?: '';
             $formatted_date   = !empty($visit_date) ? date('F j, Y', strtotime($visit_date)) : '[Unknown Date]';
-            $status_text      = ($status === 'approved') ? 'approved' : 'pending approval';
-
-            $host_first_name  = $host_member ? get_user_meta($host_member->ID, 'first_name', true) : '';
-            $host_last_name   = $host_member ? get_user_meta($host_member->ID, 'last_name', true) : '';
+            $status_text      = ($status === 'approved') ? 'approved' : 'pending approval';           
 
             // --- GUEST EMAIL ---
             if ($guest_receive_emails === 'yes' && !empty($guest_email) && is_email($guest_email)) {
@@ -1113,13 +1136,10 @@ class VMS_Accommodation extends Base
                 $message  = "Dear {$guest_first_name},\n\n";
                 $message .= "Your visit to Nyeri Club has been registered successfully.\n\n";
                 $message .= "Visit Details:\n";
-                $message .= "Date: {$formatted_date}\n";
-                if ($host_member) {
-                    $message .= "Host: {$host_first_name} {$host_last_name}\n";
-                }
+                $message .= "Date: {$formatted_date}\n";                
                 $message .= "Status: " . ucfirst($status_text) . "\n\n";
                 $message .= ($status === 'approved')
-                    ? "Your visit has been approved. Please present a valid ID when you arrive.\n\n"
+                    ? "Your visit has been approved. Please present a valid ID when you arrive at reception.\n\n"
                     : "Your visit is currently pending approval. You will receive another email once approved.\n\n";
                 $message .= "Thank you for choosing Nyeri Club.\n\n";
                 $message .= "Best regards,\nNyeri Club Visitor Management System";
@@ -1132,34 +1152,7 @@ class VMS_Accommodation extends Base
                 }
             } else {
                 error_log("[Visit Registration Email] Skipped guest email (opt-out or invalid email)");
-            }
-
-            // --- HOST EMAIL ---
-            if ($host_member && !empty($host_member->user_email) && is_email($host_member->user_email)) {
-                $host_receive_emails = get_user_meta($host_member->ID, 'receive_emails', true);
-                if ($host_receive_emails === 'yes') {
-                    $subject = 'New Visit Registration - Nyeri Club';
-                    $message  = "Dear {$host_first_name} {$host_last_name},\n\n";
-                    $message .= "A visit has been registered with you as the host.\n\n";
-                    $message .= "Guest Details:\n";
-                    $message .= "Name: {$guest_first_name} {$guest_last_name}\n";
-                    $message .= "Visit Date: {$formatted_date}\n";
-                    $message .= "Status: " . ucfirst($status_text) . "\n\n";
-                    $message .= ($status === 'approved')
-                        ? "The visit has been approved. Please ensure you are available to receive your guest.\n\n"
-                        : "The visit is pending approval due to capacity limits.\n\n";
-                    $message .= "Best regards,\nNyeri Club Visitor Management System";
-
-                    error_log("[Visit Registration Email] Sending host email to {$host_member->user_email}");
-                    if (!wp_mail($host_member->user_email, $subject, $message)) {
-                        error_log("[Visit Registration Email] wp_mail() returned false for host_email={$host_member->user_email}");
-                    } else {
-                        error_log("[Visit Registration Email] Host email sent successfully to {$host_member->user_email}");
-                    }
-                } else {
-                    error_log("[Visit Registration Email] Host opted out of email notifications");
-                }
-            }
+            }           
 
         } catch (Throwable $e) {
             error_log("[Visit Registration Email] Exception: " . $e->getMessage());

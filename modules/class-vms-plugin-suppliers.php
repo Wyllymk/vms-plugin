@@ -44,11 +44,11 @@ class VMS_Suppliers extends Base
     }  
 
     /**
-     * Setup guest management related hooks
+     * Setup Supplier management related hooks
      */
     private static function setup_suppliers_management_hooks(): void
     {      
-        // Guest
+        // Supplier
         add_action('wp_ajax_suppliers_registration', [self::class, 'handle_suppliers_registration']);
         add_action('wp_ajax_update_suppliers', [self::class, 'handle_suppliers_update']);
         add_action('wp_ajax_delete_suppliers', [self::class, 'handle_suppliers_deletion']);
@@ -61,7 +61,7 @@ class VMS_Suppliers extends Base
     }   
 
     /**
-     * Handle guest sign-in via AJAX with strict ID number validation
+     * Handle Supplier sign-in via AJAX with strict ID number validation
      * and robust error handling.
      */
     public static function handle_sign_in_suppliers(): void
@@ -75,7 +75,7 @@ class VMS_Suppliers extends Base
             $visit_id  = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
             $id_number = sanitize_text_field($_POST['id_number'] ?? '');
 
-            error_log("[Guest Sign-In] Received request: visit_id={$visit_id}, id_number={$id_number}");
+            error_log("[Supplier Sign-In] Received request: visit_id={$visit_id}, id_number={$id_number}");
 
             if (!$visit_id) {
                 wp_send_json_error(['messages' => ['Invalid visit ID']]);
@@ -88,11 +88,11 @@ class VMS_Suppliers extends Base
             }
 
             global $wpdb;
-            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
-            $guests_table       = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
+            $guests_table       = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
 
             // -------------------------------------------------------------
-            // 2. Fetch visit and guest data
+            // 2. Fetch visit and Supplier data
             // -------------------------------------------------------------
             $visit = $wpdb->get_row($wpdb->prepare(
                 "SELECT gv.*, g.id_number, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails, g.guest_status
@@ -103,7 +103,7 @@ class VMS_Suppliers extends Base
             ));
 
             if (!$visit) {
-                error_log("[Guest Sign-In] No visit found for ID {$visit_id}");
+                error_log("[Supplier Sign-In] No visit found for ID {$visit_id}");
                 wp_send_json_error(['messages' => ['Visit not found']]);
                 return;
             }
@@ -113,8 +113,8 @@ class VMS_Suppliers extends Base
             // -------------------------------------------------------------
             if (!empty($visit->id_number)) {
                 if ($visit->id_number !== $id_number) {
-                    error_log("[Guest Sign-In] Mismatched ID number for guest_id={$visit->guest_id}");
-                    wp_send_json_error(['messages' => ['ID number does not match the registered guest record']]);
+                    error_log("[Supplier Sign-In] Mismatched ID number for guest_id={$visit->guest_id}");
+                    wp_send_json_error(['messages' => ['ID number does not match the registered supplier record']]);
                     return;
                 }
             } else {
@@ -124,12 +124,12 @@ class VMS_Suppliers extends Base
                 ));
 
                 if ($existing > 0) {
-                    error_log("[Guest Sign-In] Duplicate ID number {$id_number} detected for guest_id={$visit->guest_id}");
-                    wp_send_json_error(['messages' => ['This ID number is already registered with another guest']]);
+                    error_log("[Supplier Sign-In] Duplicate ID number {$id_number} detected for guest_id={$visit->guest_id}");
+                    wp_send_json_error(['messages' => ['This ID number is already registered with another supplier']]);
                     return;
                 }
 
-                // Safe to update guest record
+                // Safe to update Supplier record
                 $updated = $wpdb->update(
                     $guests_table,
                     ['id_number' => $id_number],
@@ -139,30 +139,30 @@ class VMS_Suppliers extends Base
                 );
 
                 if ($updated === false) {
-                    error_log("[Guest Sign-In] Failed to update ID number for guest_id={$visit->guest_id}");
+                    error_log("[Supplier Sign-In] Failed to update ID number for guest_id={$visit->guest_id}");
                     wp_send_json_error(['messages' => ['Failed to save ID number']]);
                     return;
                 }
 
                 $visit->id_number = $id_number;
-                error_log("[Guest Sign-In] ID number saved successfully for guest_id={$visit->guest_id}");
+                error_log("[Supplier Sign-In] ID number saved successfully for guest_id={$visit->guest_id}");
             }
 
             // -------------------------------------------------------------
             // 4. Prevent duplicate sign-ins
             // -------------------------------------------------------------
             if (!empty($visit->sign_in_time)) {
-                error_log("[Guest Sign-In] Guest already signed in: guest_id={$visit->guest_id}");
-                wp_send_json_error(['messages' => ['Guest already signed in']]);
+                error_log("[Supplier Sign-In] Supplier already signed in: guest_id={$visit->guest_id}");
+                wp_send_json_error(['messages' => ['Supplier already signed in']]);
                 return;
             }
 
             // -------------------------------------------------------------
-            // 5. Check guest status
+            // 5. Check Supplier status
             // -------------------------------------------------------------
             if (in_array($visit->guest_status, ['banned', 'suspended'])) {
-                error_log("[Guest Sign-In] Restricted guest: guest_id={$visit->guest_id}, status={$visit->guest_status}");
-                wp_send_json_error(['messages' => ['Guest access is restricted due to status: ' . $visit->guest_status]]);
+                error_log("[Supplier Sign-In] Restricted Supplier: guest_id={$visit->guest_id}, status={$visit->guest_status}");
+                wp_send_json_error(['messages' => ['Supplier access is restricted due to status: ' . $visit->guest_status]]);
                 return;
             }
 
@@ -173,8 +173,8 @@ class VMS_Suppliers extends Base
             $visit_date   = date('Y-m-d', strtotime($visit->visit_date));
 
             if ($visit_date !== $current_date) {
-                error_log("[Guest Sign-In] Wrong visit date for guest_id={$visit->guest_id}. Expected {$current_date}, got {$visit_date}");
-                wp_send_json_error(['messages' => ['Guest can only sign in on their scheduled visit date']]);
+                error_log("[Supplier Sign-In] Wrong visit date for guest_id={$visit->guest_id}. Expected {$current_date}, got {$visit_date}");
+                wp_send_json_error(['messages' => ['Supplier can only sign in on their scheduled visit date']]);
                 return;
             }
 
@@ -191,12 +191,12 @@ class VMS_Suppliers extends Base
             );
 
             if ($updated === false) {
-                error_log("[Guest Sign-In] Failed to update sign_in_time for visit_id={$visit_id}");
-                wp_send_json_error(['messages' => ['Failed to sign in guest']]);
+                error_log("[Supplier Sign-In] Failed to update sign_in_time for visit_id={$visit_id}");
+                wp_send_json_error(['messages' => ['Failed to sign in supplier']]);
                 return;
             }
 
-            error_log("[Guest Sign-In] Guest sign-in recorded successfully for guest_id={$visit->guest_id}");
+            error_log("[Supplier Sign-In] Supplier sign-in recorded successfully for guest_id={$visit->guest_id}");
 
             // -------------------------------------------------------------
             // 8. Send notifications (wrapped safely)
@@ -216,13 +216,13 @@ class VMS_Suppliers extends Base
                     'visit_date'   => $visit->visit_date
                 ];
 
-                error_log("[Guest Sign-In] Sending notifications for guest_id={$visit->guest_id}");
+                error_log("[Supplier Sign-In] Sending notifications for guest_id={$visit->guest_id}");
                 VMS_SMS::get_instance()->send_signin_notification($guest_data, $visit_data);
                 self::send_signin_email_notification($guest_data, $visit_data);
-                error_log("[Guest Sign-In] Notifications sent successfully for guest_id={$visit->guest_id}");
+                error_log("[Supplier Sign-In] Notifications sent successfully for guest_id={$visit->guest_id}");
             } catch (Throwable $notify_error) {
-                error_log("[Guest Sign-In] Notification error for guest_id={$visit->guest_id}: " . $notify_error->getMessage());
-                error_log("[Guest Sign-In] Trace: " . $notify_error->getTraceAsString());
+                error_log("[Supplier Sign-In] Notification error for guest_id={$visit->guest_id}: " . $notify_error->getMessage());
+                error_log("[Supplier Sign-In] Trace: " . $notify_error->getTraceAsString());
                 // Continue — notification failure shouldn’t block sign-in
             }
 
@@ -241,9 +241,9 @@ class VMS_Suppliers extends Base
                 'id_number'    => $visit->id_number
             ];
 
-            error_log("[Guest Sign-In] Success response prepared for guest_id={$visit->guest_id}");
+            error_log("[Supplier Sign-In] Success response prepared for guest_id={$visit->guest_id}");
             wp_send_json_success([
-                'messages'  => ['Guest signed in successfully'],
+                'messages'  => ['Supplier signed in successfully'],
                 'guestData' => $guest_data_response
             ]);
 
@@ -251,14 +251,14 @@ class VMS_Suppliers extends Base
             // -------------------------------------------------------------
             // Global fail-safe for unexpected runtime errors
             // -------------------------------------------------------------
-            error_log("[Guest Sign-In] Fatal error: " . $e->getMessage());
-            error_log("[Guest Sign-In] Stack trace: " . $e->getTraceAsString());
+            error_log("[Supplier Sign-In] Fatal error: " . $e->getMessage());
+            error_log("[Supplier Sign-In] Stack trace: " . $e->getTraceAsString());
             wp_send_json_error(['messages' => ['An unexpected error occurred. Please try again.']]);
         }
     }
 
     /**
-     * Handle guest sign-out via AJAX with logging, validation, and safe notification handling
+     * Handle Supplier sign-out via AJAX with logging, validation, and safe notification handling
      */
     public static function handle_sign_out_suppliers(): void
     {
@@ -269,7 +269,7 @@ class VMS_Suppliers extends Base
             // 1. Validate input
             // -------------------------------------------------------------
             $visit_id = isset($_POST['visit_id']) ? absint($_POST['visit_id']) : 0;
-            error_log("[Guest Sign-Out] Received request for visit_id={$visit_id}");
+            error_log("[Supplier Sign-Out] Received request for visit_id={$visit_id}");
 
             if (!$visit_id) {
                 wp_send_json_error(['messages' => ['Invalid visit ID']]);
@@ -277,11 +277,11 @@ class VMS_Suppliers extends Base
             }
 
             global $wpdb;
-            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
-            $guests_table       = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
+            $guests_table       = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
 
             // -------------------------------------------------------------
-            // 2. Fetch visit and guest details
+            // 2. Fetch visit and Supplier details
             // -------------------------------------------------------------
             $visit = $wpdb->get_row($wpdb->prepare(
                 "SELECT gv.*, g.first_name, g.last_name, g.phone_number, g.email, g.receive_messages, g.receive_emails
@@ -292,7 +292,7 @@ class VMS_Suppliers extends Base
             ));
 
             if (!$visit) {
-                error_log("[Guest Sign-Out] Visit not found for ID {$visit_id}");
+                error_log("[Supplier Sign-Out] Visit not found for ID {$visit_id}");
                 wp_send_json_error(['messages' => ['Visit not found']]);
                 return;
             }
@@ -301,14 +301,14 @@ class VMS_Suppliers extends Base
             // 3. Validate sign-in/out state
             // -------------------------------------------------------------
             if (empty($visit->sign_in_time)) {
-                error_log("[Guest Sign-Out] Guest not signed in yet for visit_id={$visit_id}");
-                wp_send_json_error(['messages' => ['Guest must be signed in first']]);
+                error_log("[Supplier Sign-Out] Supplier not signed in yet for visit_id={$visit_id}");
+                wp_send_json_error(['messages' => ['Supplier must be signed in first']]);
                 return;
             }
 
             if (!empty($visit->sign_out_time)) {
-                error_log("[Guest Sign-Out] Guest already signed out for visit_id={$visit_id}");
-                wp_send_json_error(['messages' => ['Guest already signed out']]);
+                error_log("[Supplier Sign-Out] Supplier already signed out for visit_id={$visit_id}");
+                wp_send_json_error(['messages' => ['Supplier already signed out']]);
                 return;
             }
 
@@ -325,12 +325,12 @@ class VMS_Suppliers extends Base
             );
 
             if ($updated === false) {
-                error_log("[Guest Sign-Out] Database update failed for visit_id={$visit_id}");
-                wp_send_json_error(['messages' => ['Failed to sign out guest']]);
+                error_log("[Supplier Sign-Out] Database update failed for visit_id={$visit_id}");
+                wp_send_json_error(['messages' => ['Failed to sign out supplier']]);
                 return;
             }
 
-            error_log("[Guest Sign-Out] Guest signed out successfully for guest_id={$visit->guest_id}");
+            error_log("[Supplier Sign-Out] Supplier signed out successfully for guest_id={$visit->guest_id}");
 
             // -------------------------------------------------------------
             // 5. Prepare notification data
@@ -353,13 +353,13 @@ class VMS_Suppliers extends Base
             // 6. Send notifications safely
             // -------------------------------------------------------------
             try {
-                error_log("[Guest Sign-Out] Sending sign-out notifications for guest_id={$visit->guest_id}");
+                error_log("[Supplier Sign-Out] Sending sign-out notifications for guest_id={$visit->guest_id}");
                 VMS_SMS::get_instance()->send_signout_notification($guest_data, $visit_data);
                 self::send_signout_email_notification($guest_data, $visit_data);
-                error_log("[Guest Sign-Out] Notifications sent successfully for guest_id={$visit->guest_id}");
+                error_log("[Supplier Sign-Out] Notifications sent successfully for guest_id={$visit->guest_id}");
             } catch (Throwable $notify_error) {
-                error_log("[Guest Sign-Out] Notification error for guest_id={$visit->guest_id}: " . $notify_error->getMessage());
-                error_log("[Guest Sign-Out] Trace: " . $notify_error->getTraceAsString());
+                error_log("[Supplier Sign-Out] Notification error for guest_id={$visit->guest_id}: " . $notify_error->getMessage());
+                error_log("[Supplier Sign-Out] Trace: " . $notify_error->getTraceAsString());
             }
 
             // -------------------------------------------------------------
@@ -375,7 +375,7 @@ class VMS_Suppliers extends Base
             ];
 
             wp_send_json_success([
-                'messages'  => ['Guest signed out successfully'],
+                'messages'  => ['Supplier signed out successfully'],
                 'guestData' => $guest_data_response
             ]);
 
@@ -383,8 +383,8 @@ class VMS_Suppliers extends Base
             // -------------------------------------------------------------
             // Global fallback
             // -------------------------------------------------------------
-            error_log("[Guest Sign-Out] Fatal error: " . $e->getMessage());
-            error_log("[Guest Sign-Out] Stack trace: " . $e->getTraceAsString());
+            error_log("[Supplier Sign-Out] Fatal error: " . $e->getMessage());
+            error_log("[Supplier Sign-Out] Stack trace: " . $e->getTraceAsString());
             wp_send_json_error(['messages' => ['An unexpected error occurred during sign-out. Please try again.']]);
         }
     }
@@ -396,7 +396,7 @@ class VMS_Suppliers extends Base
     {
         global $wpdb;
 
-        $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
         $guest_id     = isset($guest_data['id']) ? absint($guest_data['id']) : 0;
 
         if (!$guest_id) {
@@ -611,7 +611,7 @@ class VMS_Suppliers extends Base
             $first_name   = sanitize_text_field($_POST['first_name'] ?? '');
             $last_name    = sanitize_text_field($_POST['last_name'] ?? '');
             $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
-            $visit_date   = sanitize_text_field($_POST['visit_date'] ?? '');
+            $visit_date   = current_time('Y-m-d');
 
             error_log("[Suppliers Registration] Input received: first_name={$first_name}, last_name={$last_name}, phone={$phone_number}, visit_date={$visit_date}");
 
@@ -642,8 +642,8 @@ class VMS_Suppliers extends Base
             // -------------------------------------------------------------
             // Step 3: Define table names
             // -------------------------------------------------------------
-            $guests_table       = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
-            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
+            $guests_table       = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
+            $guest_visits_table = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
 
             error_log("[Suppliers Registration] Using tables: guests={$guests_table}, guest_visits={$guest_visits_table}");
 
@@ -659,9 +659,9 @@ class VMS_Suppliers extends Base
                 $guest_id         = (int) $existing_guest->id;
                 $receive_emails   = $existing_guest->receive_emails;
                 $receive_messages = $existing_guest->receive_messages;
-                error_log("[Suppliers Registration] Existing guest found with ID: {$guest_id}");
+                error_log("[Suppliers Registration] Existing supplier found with ID: {$guest_id}");
             } else {
-                error_log("[Suppliers Registration] No existing guest found. Creating new record...");
+                error_log("[Suppliers Registration] No existing supplier found. Creating new record...");
 
                 $insert_result = $wpdb->insert(
                     $guests_table,
@@ -677,15 +677,15 @@ class VMS_Suppliers extends Base
                 );
 
                 if ($insert_result === false) {
-                    error_log("[Suppliers Registration] ERROR: Failed to insert guest: " . $wpdb->last_error);
-                    wp_send_json_error(['messages' => ['Failed to create guest record']]);
+                    error_log("[Suppliers Registration] ERROR: Failed to insert supplier: " . $wpdb->last_error);
+                    wp_send_json_error(['messages' => ['Failed to create supplier record']]);
                     return;
                 }
 
                 $guest_id         = $wpdb->insert_id;
                 $receive_emails   = 'yes';
                 $receive_messages = 'yes';
-                error_log("[Suppliers Registration] New guest created with ID: {$guest_id}");
+                error_log("[Suppliers Registration] New supplier created with ID: {$guest_id}");
             }
 
             // -------------------------------------------------------------
@@ -699,7 +699,7 @@ class VMS_Suppliers extends Base
 
             if ($existing_visit) {
                 error_log("[Suppliers Registration] Duplicate visit detected for guest_id {$guest_id} on {$visit_date}");
-                wp_send_json_error(['messages' => ['This guest already has a visit registered on this date']]);
+                wp_send_json_error(['messages' => ['This supplier already has a visit registered on this date']]);
                 return;
             }
 
@@ -766,7 +766,7 @@ class VMS_Suppliers extends Base
 
             error_log("[Suppliers Registration] Registration completed successfully for guest_id {$guest_id}");
             wp_send_json_success([
-                'messages'  => ['Guest registered successfully'],
+                'messages'  => ['Supplier registered successfully'],
                 'guestData' => $guest_data
             ]);
 
@@ -795,17 +795,17 @@ class VMS_Suppliers extends Base
 
             $errors = [];
 
-            $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $guests_table = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
 
             // --- Validate guest ---
             if ($guest_id <= 0) {
-                $errors[] = 'Guest is required';
+                $errors[] = 'Suppliers is required';
             } else {
                 $guest_exists = $wpdb->get_var(
                     $wpdb->prepare("SELECT COUNT(*) FROM {$guests_table} WHERE id = %d", $guest_id)
                 );
                 if (!$guest_exists) {
-                    $errors[] = 'Invalid guest selected';
+                    $errors[] = 'Invalid supplier selected';
                 }
             }
            
@@ -827,8 +827,8 @@ class VMS_Suppliers extends Base
             }
 
             // --- Define tables ---
-            $table         = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
-            $guests_table  = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $table         = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
+            $guests_table  = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
 
             // --- Fetch guest info ---
             $guest_info = $wpdb->get_row($wpdb->prepare(
@@ -838,8 +838,8 @@ class VMS_Suppliers extends Base
             ));
 
             if (!$guest_info) {
-                error_log("[Suppliers Visit Registration] Guest info not found for ID $guest_id.");
-                wp_send_json_error(['messages' => ['Guest record not found']]);
+                error_log("[Suppliers Visit Registration] Suppliers info not found for ID $guest_id.");
+                wp_send_json_error(['messages' => ['Suppliers record not found']]);
             }
 
             // --- Check for duplicate visit (not cancelled) ---
@@ -916,7 +916,6 @@ class VMS_Suppliers extends Base
                     $guest_info->last_name,
                     $guest_info->email,
                     $guest_info->receive_emails,
-                    $host_member,
                     $visit_date,
                     $preliminary_status
                 );
@@ -927,7 +926,6 @@ class VMS_Suppliers extends Base
                     $guest_info->last_name,
                     $guest_info->phone_number,
                     $guest_info->receive_messages,
-                    $host_member,
                     $visit_date,
                     $preliminary_status
                 );
@@ -986,7 +984,7 @@ class VMS_Suppliers extends Base
     ): void 
     {
         // Log entry point for debugging
-        error_log("[Supplier SMS] === send_accomodation_guest_registration_sms() triggered for guest_id: {$guest_id} ===");
+        error_log("[Supplier SMS] === send_supplier_registration_sms() triggered for guest_id: {$guest_id} ===");
 
         try {
             // Format visit date for readability (e.g., October 22, 2025)
@@ -1039,47 +1037,75 @@ class VMS_Suppliers extends Base
         error_log("[Supplier SMS] === SMS process completed for guest_id: {$guest_id} ===");
     }
 
-    private static function send_visit_registration_sms( $guest_id, $first_name, $last_name, $guest_phone, $guest_receive_messages, $host_member, $visit_date, $status ): void 
+    /**
+     * Send SMS notification to SUPPLIER upon visit registration
+     *
+     * This method notifies a SUPPLIER via SMS when a visit is registered.
+     * It only sends the message if the SUPPLIER has opted in for SMS notifications.
+     *
+     * @param int    $guest_id              The ID of the SUPPLIER
+     * @param string $first_name            SUPPLIER's first name
+     * @param string $last_name             SUPPLIER's last name
+     * @param string $guest_phone           SUPPLIER's phone number
+     * @param string $guest_receive_messages Whether the SUPPLIER wants to receive SMS ('yes' or 'no')
+     * @param string $visit_date            The visit date (Y-m-d)
+     * @param string $status                The visit approval status ('approved' or 'pending')
+     *
+     * @return void
+     */
+    private static function send_visit_registration_sms(
+        $guest_id,
+        $first_name,
+        $last_name,
+        $guest_phone,
+        $guest_receive_messages,
+        $visit_date,
+        $status
+    ): void 
     {
-        if ($guest_receive_messages !== 'yes' || empty($guest_phone)) {
-            return;
-        }
+        try {
+            error_log("Preparing to send visit registration SMS for SUPPLIER ID {$guest_id}");
 
-        $formatted_date  = date('F j, Y', strtotime($visit_date));
-        $status_text     = ($status === 'approved') ? 'Approved' : 'Pending Approval';
-        $role            = 'guest';
-        $host_first_name = get_user_meta($host_member->ID, 'first_name', true);
-        $host_last_name  = get_user_meta($host_member->ID, 'last_name', true);
-
-        
-        $guest_message = "Dear " . $first_name . ",\nYou have been booked as a visitor at Nyeri Club by " . $host_first_name . " " . $host_last_name . ". Your visit registered for $formatted_date is $status_text.";
-        $role = 'guest';
-        if ($status === 'approved') {
-            $guest_message .= " Please present a valid ID or Passport upon arrival at the Club.";
-        } else {
-            $guest_message .= " You will be notified once approved.";
-        }
-
-        VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);        
-
-         // Send SMS to host if opted in
-        if ($host_member) {
-            $host_receive_messages = get_user_meta($host_member->ID, 'receive_messages', true);
-            $host_phone            = get_user_meta($host_member->ID, 'phone_number', true);
-            $host_first_name       = get_user_meta($host_member->ID, 'first_name', true);
-            $roles                 = $host_member->roles ?? [];
-            $role                  = !empty($roles) ? $roles[0] : 'member';
-
-            if ($host_receive_messages === 'yes' && !empty($host_phone)) {
-                $host_message = "Dear " . $host_first_name . ",\nYour guest $first_name $last_name has been registered for $formatted_date. Status: $status_text.";
-                if ($status === 'approved') {
-                    $host_message .= " Please be available to receive them.";
-                } else {
-                    $host_message .= " Pending approval due to limits.";
-                }
-
-                VMS_SMS::send_sms($host_phone, $host_message, $host_member->ID, $role);
+            // 1. Validate input and skip if SMS should not be sent
+            if ($guest_receive_messages !== 'yes') {
+                error_log("SUPPLIER {$guest_id} has opted out of SMS notifications. Skipping SMS send.");
+                return;
             }
+
+            if (empty($guest_phone)) {
+                error_log("SUPPLIER {$guest_id} has no valid phone number. Cannot send SMS.");
+                return;
+            }
+
+            // 2. Format visit date and determine status
+            $formatted_date = date('F j, Y', strtotime($visit_date));
+            $status_text = ($status === 'approved') ? 'Approved' : 'Pending Approval';
+
+            // 3. Build message content
+            $guest_message = "Dear {$first_name},\n";
+            $guest_message .= "You have been booked as a visitor at Nyeri Club. ";
+            $guest_message .= "Your visit registered for {$formatted_date} is {$status_text}.";
+
+            if ($status === 'approved') {
+                $guest_message .= " Please present a valid ID or Passport upon arrival at the Club Reception.";
+            } else {
+                $guest_message .= " You will be notified once approved.";
+            }
+
+            $role = 'guest';
+
+            // 4. Log message before sending
+            error_log("Sending SMS to {$guest_phone} for SUPPLIER ID {$guest_id}");
+            error_log("SMS content: {$guest_message}");
+
+            // 5. Send the SMS using the notification handler            
+            VMS_SMS::send_sms($guest_phone, $guest_message, $guest_id, $role);
+            error_log("SMS successfully dispatched to {$guest_phone} for SUPPLIER {$guest_id}");            
+
+        } catch (Exception $e) {
+            // 6. Handle unexpected exceptions safely
+            error_log("Exception in send_visit_registration_sms for SUPPLIER {$guest_id}: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
         }
     }
 
@@ -1091,7 +1117,6 @@ class VMS_Suppliers extends Base
         $guest_last_name,
         $guest_email,
         $guest_receive_emails,
-        $host_member,
         $visit_date,
         $status
     ) 
@@ -1100,67 +1125,34 @@ class VMS_Suppliers extends Base
             error_log("[Visit Registration Email] Starting send_visit_registration_emails()");
 
             // Safety defaults
-            $guest_first_name = $guest_first_name ?: '[Unknown Guest]';
+            $guest_first_name = $guest_first_name ?: '[Unknown Supplier]';
             $guest_last_name  = $guest_last_name ?: '';
             $formatted_date   = !empty($visit_date) ? date('F j, Y', strtotime($visit_date)) : '[Unknown Date]';
-            $status_text      = ($status === 'approved') ? 'approved' : 'pending approval';
+            $status_text      = ($status === 'approved') ? 'approved' : 'pending approval';            
 
-            $host_first_name  = $host_member ? get_user_meta($host_member->ID, 'first_name', true) : '';
-            $host_last_name   = $host_member ? get_user_meta($host_member->ID, 'last_name', true) : '';
-
-            // --- GUEST EMAIL ---
+            // --- SUPPLIER EMAIL ---
             if ($guest_receive_emails === 'yes' && !empty($guest_email) && is_email($guest_email)) {
                 $subject = 'Visit Registration Confirmation - Nyeri Club';
                 $message  = "Dear {$guest_first_name},\n\n";
                 $message .= "Your visit to Nyeri Club has been registered successfully.\n\n";
                 $message .= "Visit Details:\n";
-                $message .= "Date: {$formatted_date}\n";
-                if ($host_member) {
-                    $message .= "Host: {$host_first_name} {$host_last_name}\n";
-                }
+                $message .= "Date: {$formatted_date}\n";    
                 $message .= "Status: " . ucfirst($status_text) . "\n\n";
                 $message .= ($status === 'approved')
-                    ? "Your visit has been approved. Please present a valid ID when you arrive.\n\n"
+                    ? "Your visit has been approved. Please present a valid ID when you arrive at reception.\n\n"
                     : "Your visit is currently pending approval. You will receive another email once approved.\n\n";
                 $message .= "Thank you for choosing Nyeri Club.\n\n";
                 $message .= "Best regards,\nNyeri Club Visitor Management System";
 
-                error_log("[Visit Registration Email] Sending guest email to {$guest_email}");
+                error_log("[Visit Registration Email] Sending supplier email to {$guest_email}");
                 if (!wp_mail($guest_email, $subject, $message)) {
                     error_log("[Visit Registration Email] wp_mail() returned false for guest_email={$guest_email}");
                 } else {
-                    error_log("[Visit Registration Email] Guest email sent successfully to {$guest_email}");
+                    error_log("[Visit Registration Email] Supplier email sent successfully to {$guest_email}");
                 }
             } else {
-                error_log("[Visit Registration Email] Skipped guest email (opt-out or invalid email)");
-            }
-
-            // --- HOST EMAIL ---
-            if ($host_member && !empty($host_member->user_email) && is_email($host_member->user_email)) {
-                $host_receive_emails = get_user_meta($host_member->ID, 'receive_emails', true);
-                if ($host_receive_emails === 'yes') {
-                    $subject = 'New Visit Registration - Nyeri Club';
-                    $message  = "Dear {$host_first_name} {$host_last_name},\n\n";
-                    $message .= "A visit has been registered with you as the host.\n\n";
-                    $message .= "Guest Details:\n";
-                    $message .= "Name: {$guest_first_name} {$guest_last_name}\n";
-                    $message .= "Visit Date: {$formatted_date}\n";
-                    $message .= "Status: " . ucfirst($status_text) . "\n\n";
-                    $message .= ($status === 'approved')
-                        ? "The visit has been approved. Please ensure you are available to receive your guest.\n\n"
-                        : "The visit is pending approval due to capacity limits.\n\n";
-                    $message .= "Best regards,\nNyeri Club Visitor Management System";
-
-                    error_log("[Visit Registration Email] Sending host email to {$host_member->user_email}");
-                    if (!wp_mail($host_member->user_email, $subject, $message)) {
-                        error_log("[Visit Registration Email] wp_mail() returned false for host_email={$host_member->user_email}");
-                    } else {
-                        error_log("[Visit Registration Email] Host email sent successfully to {$host_member->user_email}");
-                    }
-                } else {
-                    error_log("[Visit Registration Email] Host opted out of email notifications");
-                }
-            }
+                error_log("[Visit Registration Email] Skipped supplier email (opt-out or invalid email)");
+            }           
 
         } catch (Throwable $e) {
             error_log("[Visit Registration Email] Exception: " . $e->getMessage());
@@ -1174,7 +1166,7 @@ class VMS_Suppliers extends Base
         // Verify AJAX request (nonce and permissions)
         self::verify_ajax_request();
 
-        error_log('---[Guest Update Handler Triggered]---');
+        error_log('---[Supplier Update Handler Triggered]---');
 
         $errors = [];
 
@@ -1206,7 +1198,7 @@ class VMS_Suppliers extends Base
             ], true));
 
             // Validate required fields
-            if (empty($guest_id)) $errors[] = 'Guest ID is required';
+            if (empty($guest_id)) $errors[] = 'Supplier ID is required';
             if (empty($first_name)) $errors[] = 'First name is required';
             if (empty($last_name)) $errors[] = 'Last name is required';
             if (empty($phone_number)) $errors[] = 'Phone number is required';
@@ -1217,10 +1209,10 @@ class VMS_Suppliers extends Base
             }
 
             global $wpdb;
-            $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+            $guests_table = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
 
             // ----------------------------
-            // 2. FETCH EXISTING GUEST
+            // 2. FETCH EXISTING Supplier
             // ----------------------------
             $guest = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM $guests_table WHERE id = %d",
@@ -1228,14 +1220,14 @@ class VMS_Suppliers extends Base
             ));
 
             if (!$guest) {
-                error_log("Guest not found: ID {$guest_id}");
-                wp_send_json_error(['messages' => ['Guest not found']]);
+                error_log("Supplier not found: ID {$guest_id}");
+                wp_send_json_error(['messages' => ['Supplier not found']]);
             }
 
             $old_status = $guest->guest_status;
             $new_status = $guest_status;
 
-            error_log("Existing guest found: {$guest->first_name} {$guest->last_name} (Status: {$old_status})");
+            error_log("Existing Supplier found: {$guest->first_name} {$guest->last_name} (Status: {$old_status})");
 
             // ----------------------------
             // 3. CHECK FOR DUPLICATE ID NUMBER (NULL-SAFE)
@@ -1252,16 +1244,16 @@ class VMS_Suppliers extends Base
                 ));
 
                 if ($id_number_exists) {
-                    error_log("Duplicate ID number detected for guest {$guest_id} (ID Number: {$id_number})");
-                    wp_send_json_error(['messages' => ['ID number is already in use by another guest']]);
+                    error_log("Duplicate ID number detected for supplier {$guest_id} (ID Number: {$id_number})");
+                    wp_send_json_error(['messages' => ['ID number is already in use by another supplier']]);
                 }
             } else {
                 // Log case where ID number is NULL or empty
-                error_log("Guest {$guest_id} updated with NULL or empty ID number — allowed.");
+                error_log("Supplier {$guest_id} updated with NULL or empty ID number — allowed.");
             }
 
             // ----------------------------
-            // 4. UPDATE GUEST RECORD
+            // 4. UPDATE Supplier RECORD
             // ----------------------------
             $update_data = [
                 'first_name'       => $first_name,
@@ -1286,11 +1278,11 @@ class VMS_Suppliers extends Base
             );
 
             if ($result === false) {
-                error_log("Database update failed for guest {$guest_id}: " . $wpdb->last_error);
-                wp_send_json_error(['messages' => ['Failed to update guest record']]);
+                error_log("Database update failed for supplier {$guest_id}: " . $wpdb->last_error);
+                wp_send_json_error(['messages' => ['Failed to update supplier record']]);
             }
 
-            error_log("Guest updated successfully in DB: ID {$guest_id}");
+            error_log("Supplier updated successfully in DB: ID {$guest_id}");
 
             // ----------------------------
             // 5. HANDLE STATUS CHANGE NOTIFICATIONS
@@ -1305,29 +1297,29 @@ class VMS_Suppliers extends Base
             ];
 
             if ($old_status !== $new_status) {
-                error_log("Status changed for guest {$guest_id}: {$old_status} → {$new_status}");
+                error_log("Status changed for supplier {$guest_id}: {$old_status} → {$new_status}");
 
                 try {
                     VMS_Guest::send_guest_status_change_email($guest_data, $old_status, $new_status);
                     VMS_Guest::send_guest_status_change_sms($guest_data, $old_status, $new_status);
-                    error_log("Status change notifications sent for guest {$guest_id}");
+                    error_log("Status change notifications sent for supplier {$guest_id}");
                 } catch (Exception $e) {
-                    error_log("Error sending notifications for guest {$guest_id}: " . $e->getMessage());
+                    error_log("Error sending notifications for supplier {$guest_id}: " . $e->getMessage());
                 }
             } else {
-                error_log("No status change detected for guest {$guest_id}");
+                error_log("No status change detected for supplier {$guest_id}");
             }
 
             // ----------------------------
             // 6. SUCCESS RESPONSE
             // ----------------------------
             wp_send_json_success([
-                'message' => 'Guest updated successfully'
+                'message' => 'Supplier updated successfully'
             ]);
 
         } catch (Exception $e) {
             // Catch any unexpected errors
-            error_log("Exception in handle_guest_update: " . $e->getMessage());
+            error_log("Exception in handle_supplier_update: " . $e->getMessage());
             wp_send_json_error(['messages' => ['Unexpected error occurred. Please try again later.']]);
         }
     }
@@ -1338,7 +1330,7 @@ class VMS_Suppliers extends Base
      */
     public static function handle_suppliers_deletion()
     {
-        $function = '[handle_accommodation_guest_deletion]';
+        $function = '[handle_accommodation_supplier_deletion]';
         error_log("$function Function triggered.");
 
         try {
@@ -1346,34 +1338,34 @@ class VMS_Suppliers extends Base
             self::verify_ajax_request();
             error_log("$function AJAX request verified.");
 
-            // --- Validate Guest ID ---
+            // --- Validate Supplier ID ---
             $guest_id = isset($_POST['guest_id']) ? absint($_POST['guest_id']) : 0;
 
             if (empty($guest_id)) {
                 error_log("$function Missing guest_id in request.");
-                wp_send_json_error(['messages' => ['Guest ID is required']]);
+                wp_send_json_error(['messages' => ['Supplier ID is required']]);
                 return;
             }
 
             global $wpdb;
-            $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
-            $visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
+            $guests_table = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
+            $visits_table = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
 
             error_log("$function Checking existence of guest_id=$guest_id in $guests_table");
 
-            // --- Verify Guest Exists ---
+            // --- Verify Supplier Exists ---
             $existing_guest = $wpdb->get_row($wpdb->prepare(
                 "SELECT id FROM $guests_table WHERE id = %d",
                 $guest_id
             ));
 
             if (!$existing_guest) {
-                error_log("$function Guest not found for guest_id=$guest_id.");
-                wp_send_json_error(['messages' => ['Guest not found']]);
+                error_log("$function Supplier not found for guest_id=$guest_id.");
+                wp_send_json_error(['messages' => ['Supplier not found']]);
                 return;
             }
 
-            // --- Delete All Related Guest Visits ---
+            // --- Delete All Related Supplier Visits ---
             error_log("$function Deleting visits for guest_id=$guest_id from $visits_table");
 
             $deleted_visits = $wpdb->delete(
@@ -1388,7 +1380,7 @@ class VMS_Suppliers extends Base
                 error_log("$function Deleted $deleted_visits visit record(s) for guest_id=$guest_id.");
             }
 
-            // --- Delete Guest Record ---
+            // --- Delete Supplier Record ---
             error_log("$function Deleting guest_id=$guest_id from $guests_table");
 
             $deleted_guest = $wpdb->delete(
@@ -1399,17 +1391,17 @@ class VMS_Suppliers extends Base
 
             if ($deleted_guest === false) {
                 error_log("$function Failed to delete guest_id=$guest_id. MySQL error: " . $wpdb->last_error);
-                wp_send_json_error(['messages' => ['Failed to delete guest record']]);
+                wp_send_json_error(['messages' => ['Failed to delete supplier record']]);
                 return;
             }
 
-            error_log("$function Guest deleted successfully. guest_id=$guest_id");
-            wp_send_json_success(['messages' => ['Guest deleted successfully']]);
+            error_log("$function Supplier deleted successfully. guest_id=$guest_id");
+            wp_send_json_success(['messages' => ['Supplier deleted successfully']]);
 
         } catch (Throwable $e) {
             error_log("$function Exception: " . $e->getMessage());
             error_log("$function Trace: " . $e->getTraceAsString());
-            wp_send_json_error(['messages' => ['An unexpected error occurred during guest deletion.']]);
+            wp_send_json_error(['messages' => ['An unexpected error occurred during supplier deletion.']]);
         }
     }
    
@@ -1421,8 +1413,8 @@ class VMS_Suppliers extends Base
         global $wpdb;
         error_log('Auto sign out Suppliers');
         
-        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::A_GUEST_VISITS_TABLE);
-        $guests_table = VMS_Config::get_table_name(VMS_Config::A_GUESTS_TABLE);
+        $guest_visits_table = VMS_Config::get_table_name(VMS_Config::SUPPLIER_VISITS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::SUPPLIERS_TABLE);
         
         // Get yesterday's date
         $yesterday = date('Y-m-d', strtotime('-1 day', current_time('timestamp')));
@@ -1437,7 +1429,7 @@ class VMS_Suppliers extends Base
         ));
         
         if (empty($visits)) {
-            error_log('No guests to sign out');
+            error_log('No suppliers to sign out');
             return;
         }
         
@@ -1454,9 +1446,9 @@ class VMS_Suppliers extends Base
             );
 
             if ($updated === false) {
-                error_log("Failed to sign out guest visit ID: {$visit->id}");
+                error_log("Failed to sign out supplier visit ID: {$visit->id}");
             } else {
-                error_log("Signed out guest visit ID: {$visit->id}");
+                error_log("Signed out supplier visit ID: {$visit->id}");
             }          
             
             // Update guest status
