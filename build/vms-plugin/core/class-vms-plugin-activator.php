@@ -76,6 +76,9 @@ class VMS_Plugin_Activator
         // Create all database tables with proper relationships
         VMS_Database_Manager::create_all_tables();
         
+        // Setup cron schedules for recurring tasks.
+        VMS_Core::setup_cron_schedules();
+        
         // Schedule all automated cron jobs
         VMS_Cron_Manager::activate_all_jobs();
 

@@ -41,14 +41,26 @@ class VMS_Core extends Base
     public function init(): void
     {
         self::setup_core_management_hooks();
+        self::setup_cron_schedules();
     }
 
     /**
      * Setup guest management related hooks
+     * 
+     * @since 1.0.0
      */
     private static function setup_core_management_hooks(): void
     {       
         add_action('admin_init', [self::class, 'handle_status_setup']);
+    }
+
+    /**
+     * Setup cron schedules for recurring tasks.
+     *
+     * @since 1.0.0
+     */
+    public static function setup_cron_schedules(): void
+    {       
         add_filter('cron_schedules', [self::class, 'register_custom_intervals']);        
     }
     

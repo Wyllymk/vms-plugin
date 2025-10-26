@@ -72,7 +72,7 @@ class VMS_SMS extends Base
     {
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
-        $sender_id = get_option('vms_sms_sender_id', 'SMS_Leopard');
+        $sender_id = get_option('vms_sms_sender_id', 'SMS_TEST');
     
         // Always use our callback URL for status updates
         $callback_url = self::get_callback_url();

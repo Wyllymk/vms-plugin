@@ -63,7 +63,7 @@ class VMS_Plugin_Deactivator
         VMS_Page_Manager::remove_all_pages();
 
         // Remove all database tables with proper relationships
-        VMS_Database_Manager::drop_all_tables();
+        // VMS_Database_Manager::drop_all_tables();
 
         // Remove all custom roles and capabilities
         VMS_Roles::delete_roles();
