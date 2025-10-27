@@ -192,6 +192,12 @@ final class Loader extends Base
     private function load_core_components()
     {
         /**
+         * Load core module.
+         * Handles core functionalities.
+         */
+        VMS_Core::get_instance()->init(); 
+        
+        /**
          * Load Profile module.
          * Handles Profile functionalities.
          */
@@ -239,11 +245,7 @@ final class Loader extends Base
          */
         VMS_Clubs::get_instance()->init(); 
 
-        /**
-         * Load core module.
-         * Handles core functionalities.
-         */
-        VMS_Core::get_instance()->init(); 
+        
 
         /**
          * Load security module.

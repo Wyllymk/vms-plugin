@@ -52,6 +52,12 @@ class VMS_Core extends Base
     private static function setup_core_management_hooks(): void
     {       
         add_action('admin_init', [self::class, 'handle_status_setup']);
+        // Register rewrite rule and query var for SMS callback
+        add_action('init', [self::class, 'register_sms_callback_route']);
+        // Register query var
+        add_filter('query_vars', [self::class, 'register_sms_query_var']);
+        // Handle SMS callback via template_redirect
+        add_action('template_redirect', [self::class, 'handle_sms_callback']);
     }
 
     /**
@@ -62,6 +68,76 @@ class VMS_Core extends Base
     public static function setup_cron_schedules(): void
     {       
         add_filter('cron_schedules', [self::class, 'register_custom_intervals']);        
+    }
+
+     /**
+     * Register the rewrite rule and query var for SMS callback.
+     */
+    public static function register_sms_callback_route(): void
+    {
+        error_log('[VMS] Registering SMS callback route...');
+        try {
+            // Add rewrite rule
+            add_rewrite_rule(
+                '^vms-sms-callback/?$',
+                'index.php?vms_sms_callback=1',
+                'top'
+            );
+
+            // Add query var
+            add_filter('query_vars', function ($vars) {
+                $vars[] = 'vms_sms_callback';
+                return $vars;
+            });
+
+            error_log('[VMS] SMS callback rewrite rule and query var registered.');
+        } catch (Exception $e) {
+            error_log('[VMS ERROR] Failed to register SMS callback route: ' . $e->getMessage());
+        }
+    }
+
+     /**
+     * Register the custom query var 'vms_sms_callback'.
+     */
+    public static function register_sms_query_var($vars): array
+    {
+        error_log('[VMS] Registering query var "vms_sms_callback"...');
+        try {
+            $vars[] = 'vms_sms_callback';
+            error_log('[VMS] Query var "vms_sms_callback" registered.');
+        } catch (Exception $e) {
+            error_log('[VMS ERROR] Failed to register query var: ' . $e->getMessage());
+        }
+
+        return $vars;
+    }
+    
+    /**
+     * Handle SMS callback when query var 'vms_sms_callback' is present.
+     */
+    public static function handle_sms_callback(): void
+    {
+        error_log('[VMS] Handling SMS callback...');
+
+        try {
+            $query_var = get_query_var('vms_sms_callback');
+
+            if ($query_var) {
+                error_log('[VMS] SMS callback detected with query var: ' . sanitize_text_field($query_var));
+
+                $instance = VMS_SMS::get_instance();
+                if (method_exists($instance, 'handle_sms_delivery_callback')) {
+                    $instance->handle_sms_delivery_callback();
+                    error_log('[VMS] SMS delivery callback handled successfully.');
+                } else {
+                    error_log('[VMS ERROR] VMS_SMS::handle_sms_delivery_callback() method not found.');
+                }
+
+                exit;
+            }
+        } catch (Exception $e) {
+            error_log('[VMS ERROR] Exception during SMS callback handling: ' . $e->getMessage());
+        }
     }
     
     /**
