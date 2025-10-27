@@ -507,20 +507,37 @@ class VMS_SMS extends Base
     }
 
     /**
-     * Get delivery report for a message
+     * Get delivery report for a specific message ID from the SMS API.
+     *
+     * @param string $message_id The unique ID of the message to check.
+     * @return array|null Returns the delivery report data or null on failure.
      */
     public static function get_delivery_report(string $message_id): ?array
     {
+        // Log when this function starts
+        error_log("[" . current_time('mysql') . "] get_delivery_report() STARTED for Message ID: {$message_id}");
+
+        // Fetch API credentials from WordPress options
         $api_key = get_option('vms_sms_api_key', '');
         $api_secret = get_option('vms_sms_api_secret', '');
 
+        // Validate input and credentials before proceeding
         if (empty($api_key) || empty($api_secret) || empty($message_id)) {
+            error_log("[" . current_time('mysql') . "] get_delivery_report() ERROR: Missing required parameters. Message ID: {$message_id}");
             return null;
         }
 
+        // Prepare authentication header (Basic Auth)
         $auth = base64_encode($api_key . ':' . $api_secret);
 
-        $response = wp_remote_get(self::$api_base_url . '/delivery_reports/' . $message_id, [
+        // Build the request URL
+        $url = self::$api_base_url . '/delivery_reports/' . $message_id;
+
+        // Log request attempt
+        error_log("[" . current_time('mysql') . "] get_delivery_report() REQUESTING URL: {$url}");
+
+        // Make the remote GET request
+        $response = wp_remote_get($url, [
             'headers' => [
                 'Authorization' => 'Basic ' . $auth,
                 'Content-Type' => 'application/json'
@@ -528,39 +545,95 @@ class VMS_SMS extends Base
             'timeout' => 15
         ]);
 
+        // Handle WP errors (connection, timeout, DNS, etc.)
         if (is_wp_error($response)) {
-            error_log('Delivery report error: ' . $response->get_error_message());
+            $error_message = $response->get_error_message();
+            error_log("[" . current_time('mysql') . "] get_delivery_report() REQUEST FAILED | Message ID: {$message_id} | Error: {$error_message}");
             return null;
         }
 
+        // Retrieve and decode JSON body
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
+        // Log the raw response (for debugging only)
+        error_log("[" . current_time('mysql') . "] get_delivery_report() RESPONSE for Message ID {$message_id}: " . print_r($data, true));
+
+        // Check for valid response structure
         if ($data && isset($data['status'])) {
-            // Update local log with delivery status
+            // Update local SMS log with the new delivery status
             self::update_sms_status($message_id, $data['status']);
+            error_log("[" . current_time('mysql') . "] get_delivery_report() SUCCESS | Message ID {$message_id} | Status: {$data['status']}");
+            
+            // Log end of function
+            error_log("[" . current_time('mysql') . "] get_delivery_report() FINISHED successfully for Message ID: {$message_id}");
             return $data;
         }
+
+        // Handle unexpected or malformed response
+        error_log("[" . current_time('mysql') . "] get_delivery_report() MISSING STATUS | Message ID {$message_id} | Response: {$body}");
+
+        // Log end of function (failure case)
+        error_log("[" . current_time('mysql') . "] get_delivery_report() FINISHED with no valid data for Message ID: {$message_id}");
 
         return null;
     }
 
     /**
-     * Update SMS status in logs
+     * Update the SMS delivery status in the local logs table.
+     *
+     * @param string $message_id The unique ID of the message.
+     * @param string $status     The new delivery status (e.g., 'Delivered', 'Failed', 'Pending').
+     * @return bool Returns true if the update was successful, false otherwise.
      */
     private static function update_sms_status(string $message_id, string $status): bool
     {
         global $wpdb;
-        
+
+        // Log when this function starts running
+        error_log("[" . current_time('mysql') . "] update_sms_status() STARTED | Message ID: {$message_id} | Status: {$status}");
+
+        // Get the SMS logs table name dynamically
         $table_name = VMS_Config::get_table_name(VMS_Config::SMS_LOGS_TABLE);
-        
-        return (bool) $wpdb->update(
+
+        // Verify that table name and parameters exist before continuing
+        if (empty($table_name) || empty($message_id) || empty($status)) {
+            error_log("[" . current_time('mysql') . "] update_sms_status() ERROR: Missing table name or parameters | Table: {$table_name} | Message ID: {$message_id} | Status: {$status}");
+            return false;
+        }
+
+        // Attempt to update the record in the database
+        $result = $wpdb->update(
             $table_name,
-            ['status' => $status, 'updated_at' => current_time('mysql')],
+            [
+                'status'      => $status,
+                'updated_at'  => current_time('mysql')
+            ],
             ['message_id' => $message_id],
             ['%s', '%s'],
             ['%s']
         );
+
+        // Check the result of the update operation
+        if ($result === false) {
+            // Database error occurred — log details
+            error_log("[" . current_time('mysql') . "] update_sms_status() FAILED | Message ID: {$message_id} | Status: {$status} | DB Error: " . $wpdb->last_error);
+            return false;
+        }
+
+        if ($result === 0) {
+            // No rows updated — possibly invalid message_id
+            error_log("[" . current_time('mysql') . "] update_sms_status() NO CHANGE | Message ID: {$message_id} not found or same status '{$status}'");
+            return false;
+        }
+
+        // Log success
+        error_log("[" . current_time('mysql') . "] update_sms_status() SUCCESS | Message ID: {$message_id} updated to '{$status}'");
+
+        // Log function end
+        error_log("[" . current_time('mysql') . "] update_sms_status() FINISHED | Message ID: {$message_id}");
+
+        return true;
     }
 
     /**
