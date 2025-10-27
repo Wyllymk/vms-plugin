@@ -55,8 +55,8 @@ class VMS_Reciprocation extends Base
         add_action('wp_ajax_reciprocating_member_sign_out', [self::class, 'handle_reciprocating_sign_out']);
         add_action('wp_ajax_register_reciprocation_member_visit', [self::class, 'handle_reciprocation_member_visit_registration']);
         add_action('auto_sign_out_recip_members_at_midnight', [self::class, 'auto_sign_out_recip_members']); 
-        add_action('wp_ajax_update_member', [self::class, 'handle_member_update']);
-        add_action('wp_ajax_delete_member', [self::class, 'handle_member_deletion']);      
+        add_action('wp_ajax_update_recip_member', [self::class, 'handle_member_update']);
+        add_action('wp_ajax_delete_recip_member', [self::class, 'handle_member_deletion']);      
     }
 
 
@@ -66,7 +66,7 @@ class VMS_Reciprocation extends Base
         // Verify nonce
         self::verify_ajax_request();
 
-        error_log('Handle member update');
+        error_log('Handle recip member update');
 
         $errors = [];
 
@@ -209,7 +209,7 @@ class VMS_Reciprocation extends Base
 
         $member_id = isset($_POST['member_id']) ? absint($_POST['member_id']) : 0;
 
-        error_log('Delete member ID: ' . $member_id);
+        error_log('Delete recip member ID: ' . $member_id);
 
         if (empty($member_id)) {
             wp_send_json_error(['messages' => ['Member ID is required']]);
