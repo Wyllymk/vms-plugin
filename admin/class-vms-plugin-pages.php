@@ -35,6 +35,7 @@ class VMS_Page_Manager
         ['title' => 'Reciprocating Members', 'template' => 'page-templates/page-reciprocating-members.php'],
         ['title' => 'Reciprocating Member Details', 'template' => 'page-templates/page-reciprocating-member-details.php'],
         ['title' => 'Clubs', 'template' => 'page-templates/page-clubs.php'],
+        ['title' => 'Reports', 'template' => 'page-templates/page-reports.php'],
         ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']
     ];
 
@@ -82,7 +83,7 @@ class VMS_Page_Manager
             'guest-details', 'suppliers', 'supplier-details',
             'accommodation', 'accommodation-details', 'clubs',
             'reciprocating-members', 'reciprocating-member-details',
-            'settings'
+            'reports', 'settings'
         ];
 
         foreach ($slugs as $slug) {

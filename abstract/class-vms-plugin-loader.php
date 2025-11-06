@@ -243,9 +243,7 @@ final class Loader extends Base
          * Load club module.
          * Handles club functionalities.
          */
-        VMS_Clubs::get_instance()->init(); 
-
-        
+        VMS_Clubs::get_instance()->init();         
 
         /**
          * Load security module.
@@ -257,7 +255,14 @@ final class Loader extends Base
          * Load Settings module.
          * Handles Settings functionalities.
          */
-        VMS_Settings::get_instance()->init();         
+        VMS_Settings::get_instance()->init(); 
+        
+        /**
+         * Load Reports module.
+         * Handles Reports functionalities.
+         */
+        VMS_Reports_Handler::get_instance()->init();
+    
     }
 
     /**

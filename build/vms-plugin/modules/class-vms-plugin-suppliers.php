@@ -229,9 +229,6 @@ class VMS_Suppliers extends Base
             // -------------------------------------------------------------
             // 9. Prepare and send successful response
             // -------------------------------------------------------------
-            $host_member = get_user_by('id', $visit->host_member_id);
-            $host_name   = $host_member ? $host_member->display_name : 'N/A';
-
             $guest_data_response = [
                 'id'           => $visit->guest_id,
                 'first_name'   => $visit->first_name,
@@ -1449,16 +1446,7 @@ class VMS_Suppliers extends Base
                 error_log("Failed to sign out supplier visit ID: {$visit->id}");
             } else {
                 error_log("Signed out supplier visit ID: {$visit->id}");
-            }          
-            
-            // Update guest status
-            $wpdb->update(
-                $guests_table,
-                ['guest_status' => $guest_status],
-                ['id' => $visit->guest_id],
-                ['%s'],
-                ['%d']
-            );
+            }              
         }
     }
     

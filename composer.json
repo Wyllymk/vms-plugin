@@ -20,7 +20,8 @@
   "minimum-stability": "dev",
   "require": {
     "php": ">=7.4",
-    "yahnis-elsts/plugin-update-checker": "dev-master"
+    "yahnis-elsts/plugin-update-checker": "dev-master",
+    "dompdf/dompdf": "dev-master"
   },
   "require-dev": {
     "wp-coding-standards/wpcs": "^3.0",

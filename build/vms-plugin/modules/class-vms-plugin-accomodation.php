@@ -1448,16 +1448,7 @@ class VMS_Accommodation extends Base
                 error_log("Failed to sign out guest visit ID: {$visit->id}");
             } else {
                 error_log("Signed out guest visit ID: {$visit->id}");
-            }          
-            
-            // Update guest status
-            $wpdb->update(
-                $guests_table,
-                ['guest_status' => $guest_status],
-                ['id' => $visit->guest_id],
-                ['%s'],
-                ['%d']
-            );
+            } 
         }
     }
     
