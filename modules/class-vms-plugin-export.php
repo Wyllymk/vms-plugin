@@ -355,25 +355,29 @@ class VMS_Export_Handler {
         exit;
     }
 
-    /**
+   /**
      * Build HTML content for guest PDF
      */
     private static function build_guest_pdf_html($guest, $visits)
     {
         $export_date = date('F j, Y g:i A');
         $total_visits = count($visits);
-       
+    
         // Handle logo - embed as base64 to ensure it displays reliably
-        $logo_html = '';
+        $logo_html = '';       
         $logo_paths = [
-            get_template_directory() . '/assets/logo.png',
-            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
-            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
-            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
         ];
-       
+
         $found_logo = false;
         foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
             if (file_exists($logo_path) && is_readable($logo_path)) {
                 try {
                     $image_data = file_get_contents($logo_path);
@@ -384,20 +388,23 @@ class VMS_Export_Handler {
                             $base64_image = base64_encode($image_data);
                             $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
                             $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
                             break;
                         }
                     }
                 } catch (Exception $e) {
                     error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
                 }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
             }
         }
-       
+    
         if (!$found_logo) {
-            error_log("VMS Export: No readable logo found at paths: " . implode(', ', $logo_paths) . " for guest {$guest->id}");
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
             $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
         }
-       
+    
         // Build personal info table rows
         $personal_rows = '
             <tr>
@@ -428,7 +435,7 @@ class VMS_Export_Handler {
                 <td class="info-label">Registration Date:</td>
                 <td class="info-value">' . esc_html(VMS_Core::format_date($guest->created_at)) . '</td>
             </tr>';
-       
+    
         // Build communication preferences table rows
         $comm_rows = '
             <tr>
@@ -439,7 +446,7 @@ class VMS_Export_Handler {
                 <td class="info-label">Receive Messages:</td>
                 <td class="info-value">' . esc_html(ucfirst($guest->receive_messages)) . '</td>
             </tr>';
-       
+    
         $html = '
         <!DOCTYPE html>
         <html>
@@ -588,25 +595,25 @@ class VMS_Export_Handler {
                 <div class="company-name">Nyeri Club</div>
                 <div class="report-title">Guest Details Report</div>
             </div>
-           
+        
             <div class="section">
                 <div class="section-title">PERSONAL INFORMATION</div>
                 <table class="info-table">
                     <tbody>' . $personal_rows . '</tbody>
                 </table>
             </div>
-           
+        
             <div class="section">
                 <div class="section-title">COMMUNICATION PREFERENCES</div>
                 <table class="info-table">
                     <tbody>' . $comm_rows . '</tbody>
                 </table>
             </div>
-           
+        
             <div class="section">
                 <div class="section-title">VISIT HISTORY</div>
                 <div class="summary">Total Visits: ' . esc_html($total_visits) . '</div>';
-       
+    
         if (!empty($visits)) {
             $html .= '
                 <table class="visits-table">
@@ -623,7 +630,7 @@ class VMS_Export_Handler {
                         </tr>
                     </thead>
                     <tbody>';
-           
+        
             $counter = 1;
             foreach ($visits as $visit) {
                 $host_display = 'N/A';
@@ -637,9 +644,9 @@ class VMS_Export_Handler {
                 } elseif (!empty($visit->courtesy)) {
                     $host_display = 'Courtesy';
                 }
-               
+            
                 $status_class = 'status-' . $visit->status;
-               
+            
                 $html .= '
                         <tr>
                             <td>' . esc_html($counter++) . '</td>
@@ -652,24 +659,24 @@ class VMS_Export_Handler {
                             <td>' . esc_html(VMS_Core::format_date($visit->created_at)) . '</td>
                         </tr>';
             }
-           
+        
             $html .= '
                     </tbody>
                 </table>';
         } else {
             $html .= '<div class="no-visits">No visits recorded for this guest.</div>';
         }
-       
+    
         $html .= '
             </div>
-           
+        
             <div class="footer">
                 This report was generated by the Visitor Management System on ' . htmlspecialchars($export_date) . '<br>
                 Nyeri Club | Confidential Document
             </div>
         </body>
         </html>';
-       
+    
         return $html;
     }
 
@@ -682,16 +689,20 @@ class VMS_Export_Handler {
         $total_visits = count($visits);
        
         // Handle logo - embed as base64 to ensure it displays reliably
-        $logo_html = '';
+        $logo_html = '';       
         $logo_paths = [
-            get_template_directory() . '/assets/logo.png',
-            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
-            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
-            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
         ];
-       
+
         $found_logo = false;
         foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
             if (file_exists($logo_path) && is_readable($logo_path)) {
                 try {
                     $image_data = file_get_contents($logo_path);
@@ -702,17 +713,20 @@ class VMS_Export_Handler {
                             $base64_image = base64_encode($image_data);
                             $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
                             $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
                             break;
                         }
                     }
                 } catch (Exception $e) {
-                    error_log("VMS Export: Error processing logo at {$logo_path} for member {$user_data->ID}: " . $e->getMessage());
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
                 }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
             }
         }
-       
+    
         if (!$found_logo) {
-            error_log("VMS Export: No readable logo found at paths: " . implode(', ', $logo_paths) . " for member {$user_data->ID}");
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
             $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
         }
        
@@ -998,16 +1012,20 @@ class VMS_Export_Handler {
         $total_visits = count($visits);
         
         // Handle logo - embed as base64 to ensure it displays reliably
-        $logo_html = '';
+        $logo_html = '';       
         $logo_paths = [
-            get_template_directory() . '/assets/logo.png',
-            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
-            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
-            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
         ];
-        
+
         $found_logo = false;
         foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
             if (file_exists($logo_path) && is_readable($logo_path)) {
                 try {
                     $image_data = file_get_contents($logo_path);
@@ -1018,17 +1036,20 @@ class VMS_Export_Handler {
                             $base64_image = base64_encode($image_data);
                             $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
                             $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
                             break;
                         }
                     }
                 } catch (Exception $e) {
-                    error_log("VMS Export: Error processing logo at {$logo_path} for accommodation guest {$guest->id}: " . $e->getMessage());
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
                 }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
             }
         }
-        
+    
         if (!$found_logo) {
-            error_log("VMS Export: No readable logo found at paths: " . implode(', ', $logo_paths) . " for accommodation guest {$guest->id}");
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
             $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
         }
         
@@ -1302,16 +1323,20 @@ class VMS_Export_Handler {
         $total_visits = count($visits);
         
         // Handle logo - embed as base64 to ensure it displays reliably
-        $logo_html = '';
+        $logo_html = '';       
         $logo_paths = [
-            get_template_directory() . '/assets/logo.png',
-            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
-            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
-            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
         ];
-        
+
         $found_logo = false;
         foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
             if (file_exists($logo_path) && is_readable($logo_path)) {
                 try {
                     $image_data = file_get_contents($logo_path);
@@ -1322,17 +1347,20 @@ class VMS_Export_Handler {
                             $base64_image = base64_encode($image_data);
                             $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
                             $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
                             break;
                         }
                     }
                 } catch (Exception $e) {
-                    error_log("VMS Export: Error processing logo at {$logo_path} for supplier {$supplier->id}: " . $e->getMessage());
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
                 }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
             }
         }
-        
+    
         if (!$found_logo) {
-            error_log("VMS Export: No readable logo found at paths: " . implode(', ', $logo_paths) . " for supplier {$supplier->id}");
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
             $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
         }
         
@@ -1606,16 +1634,20 @@ class VMS_Export_Handler {
         $total_visits = count($visits);
        
         // Handle logo - embed as base64 to ensure it displays reliably
-        $logo_html = '';
+        $logo_html = '';       
         $logo_paths = [
-            get_template_directory() . '/assets/logo.png',
-            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
-            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
-            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
         ];
-       
+
         $found_logo = false;
         foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
             if (file_exists($logo_path) && is_readable($logo_path)) {
                 try {
                     $image_data = file_get_contents($logo_path);
@@ -1626,17 +1658,20 @@ class VMS_Export_Handler {
                             $base64_image = base64_encode($image_data);
                             $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
                             $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
                             break;
                         }
                     }
                 } catch (Exception $e) {
-                    error_log("VMS Export: Error processing logo at {$logo_path} for recip member {$member->id}: " . $e->getMessage());
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
                 }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
             }
         }
-       
+    
         if (!$found_logo) {
-            error_log("VMS Export: No readable logo found at paths: " . implode(', ', $logo_paths) . " for recip member {$member->id}");
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
             $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
         }
        

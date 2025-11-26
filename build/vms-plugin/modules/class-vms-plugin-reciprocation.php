@@ -56,7 +56,8 @@ class VMS_Reciprocation extends Base
         add_action('wp_ajax_register_reciprocation_member_visit', [self::class, 'handle_reciprocation_member_visit_registration']);
         add_action('auto_sign_out_recip_members_at_midnight', [self::class, 'auto_sign_out_recip_members']); 
         add_action('wp_ajax_update_recip_member', [self::class, 'handle_member_update']);
-        add_action('wp_ajax_delete_recip_member', [self::class, 'handle_member_deletion']);      
+        add_action('wp_ajax_delete_recip_member', [self::class, 'handle_member_deletion']); 
+        add_action('reset_yearly_recip_limits', [self::class, 'reset_yearly_limits']);     
     }
 
 
@@ -268,76 +269,81 @@ class VMS_Reciprocation extends Base
     }
 
     /**
-     * Recalculate visit statuses for a specific reciprocating member - with notifications
+     * Recalculate visit statuses for a specific reciprocating member - with notifications.
+     * Only casual visits count towards the yearly limit of 24.
+     * Golf tournament visits have no limit.
      */
     public static function recalculate_member_visit_statuses(int $member_id): void
     {
         global $wpdb;
         error_log('Handle recalculate member visit statuses');
-        
+
         $recip_visits_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_VISITS_TABLE);
         $recip_members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
-        $monthly_limit = 4;
-        $yearly_limit = 12;
-        
+
+        // Yearly limit for casual visits only
+        $yearly_limit = 24;
+
         // Get member data for notifications
         $member = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM {$recip_members_table} WHERE id = %d",
             $member_id
         ));
 
-        if (!$member) return;
+        if (!$member) {
+            return;
+        }
 
         $old_member_status = $member->member_status;
-        
+
         // Fetch all non-cancelled visits for this member, ordered by visit_date ASC
         $visits = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, visit_date, sign_in_time, status 
-            FROM $recip_visits_table 
-            WHERE member_id = %d AND status != 'cancelled' 
+            "SELECT id, visit_date, sign_in_time, status, visit_purpose
+            FROM $recip_visits_table
+            WHERE member_id = %d AND status != 'cancelled'
             ORDER BY visit_date ASC",
             $member_id
         ));
-        
-        if (!$visits) return;
-        
-        $monthly_scheduled = [];
+
+        if (!$visits) {
+            return;
+        }
+
         $yearly_scheduled = [];
         $status_changes = [];
-        
+
         foreach ($visits as $visit) {
-            $month_key = date('Y-m', strtotime($visit->visit_date));
             $year_key = date('Y', strtotime($visit->visit_date));
-            
-            if (!isset($monthly_scheduled[$month_key])) $monthly_scheduled[$month_key] = 0;
-            if (!isset($yearly_scheduled[$year_key])) $yearly_scheduled[$year_key] = 0;
-            
+
+            if (!isset($yearly_scheduled[$year_key])) {
+                $yearly_scheduled[$year_key] = 0;
+            }
+
             $visit_date_obj = new \DateTime($visit->visit_date);
             $today = new \DateTime(current_time('Y-m-d'));
             $is_past = $visit_date_obj < $today;
             $attended = $is_past && !empty($visit->sign_in_time);
-            
-            // Increment counts for future visits or past attended visits
-            if (!$is_past || $attended) {
-                $monthly_scheduled[$month_key]++;
+            $is_casual = ($visit->visit_purpose === 'casual_visit');
+
+            // Increment yearly count only for casual visits if future or attended
+            if ($is_casual && (!$is_past || $attended)) {
                 $yearly_scheduled[$year_key]++;
             }
-            
+
             // Determine status for this visit
             $old_status = $visit->status;
             $new_status = 'approved';
-            
-            // Check monthly/yearly limits
-            if ($monthly_scheduled[$month_key] > $monthly_limit || $yearly_scheduled[$year_key] > $yearly_limit) {
+
+            // Check yearly limit only for casual visits
+            if ($is_casual && $yearly_scheduled[$year_key] > $yearly_limit) {
                 $new_status = 'unapproved';
             }
-            
-            // If this is a missed past visit, reduce counts to free slots
-            if ($is_past && empty($visit->sign_in_time)) {
-                $monthly_scheduled[$month_key]--;
+
+            // If this is a missed past casual visit, reduce counts to free slots
+            if ($is_casual && $is_past && empty($visit->sign_in_time)) {
                 $yearly_scheduled[$year_key]--;
             }
-            
+
             // Update only if status changed
             if ($visit->status !== $new_status) {
                 $wpdb->update(
@@ -347,7 +353,7 @@ class VMS_Reciprocation extends Base
                     ['%s'],
                     ['%d']
                 );
-                
+
                 // Track status changes for notifications
                 $status_changes[] = [
                     'visit_id' => $visit->id,
@@ -358,16 +364,14 @@ class VMS_Reciprocation extends Base
             }
         }
 
-        // Check if member should be automatically suspended due to limits
-        $current_month = date('Y-m');
+        // Check if member should be automatically suspended due to casual visit limits
         $current_year = date('Y');
         $new_member_status = $member->member_status;
 
         if ($member->member_status === 'active') {
-            $current_monthly = $monthly_scheduled[$current_month] ?? 0;
-            $current_yearly = $yearly_scheduled[$current_year] ?? 0;
+            $current_yearly_casual = $yearly_scheduled[$current_year] ?? 0;
 
-            if ($current_monthly >= $monthly_limit || $current_yearly >= $yearly_limit) {
+            if ($current_yearly_casual >= $yearly_limit) {
                 $new_member_status = 'suspended';
             }
         }
@@ -564,29 +568,19 @@ class VMS_Reciprocation extends Base
         }
 
         // === Get visit counts (with transient cache) ===
+        // Only count casual visits towards yearly limit
         $visit_counts = get_transient($visit_count_key);
         if ($visit_counts === false) {
             error_log('[VMS] Cache miss: fetching visit counts from DB');
 
             $today = date('Y-m-d');
-            $month_start = date('Y-m-01', strtotime($visit_date));
-            $month_end = date('Y-m-t', strtotime($visit_date));
             $year_start = date('Y-01-01', strtotime($visit_date));
             $year_end = date('Y-12-31', strtotime($visit_date));
 
-            $monthly_visits = (int)$wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $visits_table 
-                WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
-                AND (
-                    (status = 'approved' AND visit_date >= %s) OR
-                    (visit_date < %s AND sign_in_time IS NOT NULL)
-                )",
-                $member_id, $month_start, $month_end, $today, $today
-            ));
-
-            $yearly_visits = (int)$wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $visits_table 
-                WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            $yearly_casual_visits = (int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $visits_table
+                WHERE member_id = %d AND visit_date BETWEEN %s AND %s
+                AND (visit_purpose IS NULL OR visit_purpose = 'casual_visit')
                 AND (
                     (status = 'approved' AND visit_date >= %s) OR
                     (visit_date < %s AND sign_in_time IS NOT NULL)
@@ -594,18 +588,17 @@ class VMS_Reciprocation extends Base
                 $member_id, $year_start, $year_end, $today, $today
             ));
 
-            $visit_counts = ['monthly' => $monthly_visits, 'yearly' => $yearly_visits];
+            $visit_counts = ['yearly' => $yearly_casual_visits];
             set_transient($visit_count_key, $visit_counts, MONTH_IN_SECONDS);
         } else {
             error_log('[VMS] Cache hit: using cached visit counts');
         }
 
         // === Check limits ===
-        $monthly_limit = 4;
         $yearly_limit = 24;
         $preliminary_status = 'approved';
 
-        if (($visit_counts['monthly'] + 1) > $monthly_limit || ($visit_counts['yearly'] + 1) > $yearly_limit) {
+        if (($visit_counts['yearly'] + 1) > $yearly_limit) {
             $preliminary_status = 'suspended';
         }
 
@@ -629,7 +622,6 @@ class VMS_Reciprocation extends Base
         error_log("[VMS] Visit created successfully for member ID=$member_id");
 
         // === Update cached visit counts ===
-        $visit_counts['monthly']++;
         $visit_counts['yearly']++;
         set_transient($visit_count_key, $visit_counts, MONTH_IN_SECONDS);
 
@@ -793,8 +785,12 @@ class VMS_Reciprocation extends Base
         $member_id = absint($_POST['member_id'] ?? 0);
         $member_number = sanitize_text_field($_POST['member_number'] ?? '');
         $club_id = absint($_POST['club_id'] ?? 0);
+        $visit_purpose = sanitize_text_field($_POST['visit_purpose'] ?? '');
 
         if (!$member_id) $errors[] = 'Invalid member ID';
+        if (!in_array($visit_purpose, ['golf_tournament', 'casual_visit'])) {
+            $errors[] = 'Invalid visit purpose';
+        }
         if (!empty($errors)) {
             error_log('Validation Errors: ' . implode(', ', $errors));
             wp_send_json_error(['messages' => $errors]);
@@ -885,7 +881,7 @@ class VMS_Reciprocation extends Base
                 ['%d']
             );
             error_log("Member {$member_id} updated in DB with: " . json_encode($updates));
-        }
+        }        
 
         // --- Check Visit for Today ---------------------------------------------------
         $visit_date = date('Y-m-d');
@@ -909,12 +905,15 @@ class VMS_Reciprocation extends Base
             return;
         }
 
-        // --- Update Sign In Time -----------------------------------------------------
+        // --- Update Sign In Time -----------------------------------------------------        
         $result = $wpdb->update(
             $visits_table,
-            ['sign_in_time' => current_time('mysql')],
+            [
+                'sign_in_time' => current_time('mysql'),
+                'visit_purpose' => $visit_purpose
+            ],
             ['id' => $visit->id],
-            ['%s'],
+            ['%s', '%s'],
             ['%d']
         );
 
@@ -945,7 +944,17 @@ class VMS_Reciprocation extends Base
 
         error_log("Visit details: " . print_r($visit_with_details, true));
 
-        self::send_reciprocating_sign_in_sms($visit_with_details);
+        // Check if this is the 24th casual visit for the year
+        $year_start = date('Y-01-01');
+        $year_end = date('Y-12-31');
+        $count_casual_signed_in = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $visits_table
+            WHERE member_id = %d AND visit_purpose = 'casual_visit' AND DATE(visit_date) BETWEEN %s AND %s AND sign_in_time IS NOT NULL",
+            $member_id, $year_start, $year_end
+        ));
+        $is_final = ($count_casual_signed_in == 24);
+
+        self::send_reciprocating_sign_in_sms($visit_with_details, $is_final);
         error_log("Sent reciprocating sign-in SMS for member {$member_id}");
 
         // --- Response ---------------------------------------------------------------
@@ -961,6 +970,7 @@ class VMS_Reciprocation extends Base
                 'phone_number'                => $member->phone_number,
                 'id_number'                   => $member->id_number,
                 'visit_date'                  => $visit_date,
+                'visit_purpose'               => $visit_purpose,
                 'status'                      => 'approved',
                 'member_status'               => $member->member_status,
                 'club_id'                     => $member->reciprocating_club_id,
@@ -970,7 +980,6 @@ class VMS_Reciprocation extends Base
             ]
         ]);
     }
-
 
     /**
      * Get Reciprocating Clubs via AJAX
@@ -1106,7 +1115,7 @@ class VMS_Reciprocation extends Base
     /**
      * Send sign-in SMS notification
      */
-    private static function send_reciprocating_sign_in_sms($visit): void
+    private static function send_reciprocating_sign_in_sms($visit, bool $is_final = false): void
     {
         // --- Initial Log ---
         error_log('[VMS_SMS] Preparing to send reciprocating sign-in SMS...');
@@ -1132,10 +1141,15 @@ class VMS_Reciprocation extends Base
             $sms_message .= "you have signed in successfully at {$sign_in_time}. ";
             $sms_message .= "Enjoy your visit!";
 
+            // Add alert for final casual visit
+            if ($is_final) {
+                $sms_message .= " Note: This is your final casual visit for the year. For the rest of the year, you will only be allowed to enter for golf tournaments only.";
+            }
+
             error_log("[VMS_SMS] Sending sign-in SMS to: {$visit->phone_number}");
             error_log("[VMS_SMS] SMS Message: {$sms_message}");
 
-            // --- SMS Send Logic ---            
+            // --- SMS Send Logic ---
             $result = VMS_SMS::send_sms(
                 $visit->phone_number,
                 $sms_message,
@@ -1144,7 +1158,7 @@ class VMS_Reciprocation extends Base
             );
 
             error_log("[VMS_SMS] SMS send result: " . print_r($result, true));
-            
+
         } catch (Throwable $e) {
             error_log('[VMS_SMS] Exception while sending sign-in SMS: ' . $e->getMessage());
             error_log('[VMS_SMS] Stack trace: ' . $e->getTraceAsString());
@@ -1275,43 +1289,29 @@ class VMS_Reciprocation extends Base
                 wp_send_json_error(['messages' => ['This member already has a visit registered on this date']]);
             }
 
-            // Limits
-            $month_start = date('Y-m-01', strtotime($visit_date));
-            $month_end   = date('Y-m-t', strtotime($visit_date));
+            // Limits - Only check yearly casual visits
             $year_start  = date('Y-01-01', strtotime($visit_date));
             $year_end    = date('Y-12-31', strtotime($visit_date));
             $today = date('Y-m-d');
 
-            $monthly_visits = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $table 
-                WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
-                AND ((status = 'approved' AND visit_date >= %s) OR (visit_date < %s AND sign_in_time IS NOT NULL))",
-                $member_id, $month_start, $month_end, $today, $today
-            ));
-            error_log("Monthly visits count: {$monthly_visits}");
-
-            $yearly_visits = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $table 
-                WHERE member_id = %d AND visit_date BETWEEN %s AND %s 
+            $yearly_casual_visits = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $table
+                WHERE member_id = %d AND visit_date BETWEEN %s AND %s
+                AND (visit_purpose IS NULL OR visit_purpose = 'casual_visit')
                 AND ((status = 'approved' AND visit_date >= %s) OR (visit_date < %s AND sign_in_time IS NOT NULL))",
                 $member_id, $year_start, $year_end, $today, $today
             ));
-            error_log("Yearly visits count: {$yearly_visits}");
+            error_log("Yearly casual visits count: {$yearly_casual_visits}");
 
-            $monthly_limit = 4;
-            $yearly_limit  = 12;
+            $yearly_limit  = 24;
 
-            if ($monthly_visits >= $monthly_limit) {
-                error_log('Monthly limit reached.');
-                wp_send_json_error(['messages' => ['This member has reached the monthly visit limit']]);
-            }
-            if ($yearly_visits >= $yearly_limit) {
-                error_log('Yearly limit reached.');
-                wp_send_json_error(['messages' => ['This member has reached the yearly visit limit']]);
+            if ($yearly_casual_visits >= $yearly_limit) {
+                error_log('Yearly casual limit reached.');
+                wp_send_json_error(['messages' => ['This member has reached the yearly casual visit limit']]);
             }
 
             $preliminary_status = 'approved';
-            if (($monthly_visits + 1) > $monthly_limit || ($yearly_visits + 1) > $yearly_limit) {
+            if (($yearly_casual_visits + 1) > $yearly_limit) {
                 $preliminary_status = 'unapproved';
             }
             error_log("Preliminary status set to: {$preliminary_status}");
@@ -1570,36 +1570,19 @@ class VMS_Reciprocation extends Base
     }  
 
     /**
-     * Reset monthly guest limits (only for automatically suspended guests)
-     */
-    public static function reset_monthly_limits()
-    {
-        global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
-
-        // Only reset status for guests who are automatically suspended but have active guest_status
-        $wpdb->query(
-            "UPDATE $guests_table
-            SET status = 'approved'
-            WHERE status = 'suspended'
-            AND guest_status = 'active'"
-        );
-    }
-
-    /**
      * Reset yearly guest limits (only for automatically suspended guests)
      */
     public static function reset_yearly_limits()
     {
         global $wpdb;
-        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+        $guests_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
 
         // Only reset status for guests who are automatically suspended but have active guest_status
         $wpdb->query(
             "UPDATE $guests_table
             SET status = 'approved'
             WHERE status = 'suspended'
-            AND guest_status = 'active'"
+            AND member_status = 'active'"
         );
     }
 

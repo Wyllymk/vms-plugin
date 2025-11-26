@@ -506,7 +506,7 @@ class VMS_Reports_Handler extends Base
             
             // Get and validate dates
             $from_date = isset($_POST['from_date']) ? sanitize_text_field($_POST['from_date']) : date('Y-m-d', strtotime('-7 days'));
-            $to_date = isset($_POST['to_date']) ? sanitize_text_field($_POST['to_date']) : date('Y-m-d');
+            $to_date = isset($_POST['to_date']) ? sanitize_text_field($_POST['to_date']) : date('Y-m-d');         
             
             if (!self::validate_date($from_date) || !self::validate_date($to_date)) {
                 error_log("[VMS PDF Export] Invalid dates - From: $from_date, To: $to_date");
@@ -715,6 +715,53 @@ class VMS_Reports_Handler extends Base
         $accommodation = $data['accommodation'];
         $suppliers = $data['suppliers'];
         $reciprocating = $data['reciprocating'];
+
+        // Format dates for display
+        $from_date = date('F j, Y', strtotime($from_date));
+        $to_date = date('F j, Y', strtotime($to_date));
+
+        // Handle logo - embed as base64 to ensure it displays reliably
+        $logo_html = '';       
+        $logo_paths = [
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
+        ];
+
+        $found_logo = false;
+        foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
+            if (file_exists($logo_path) && is_readable($logo_path)) {
+                try {
+                    $image_data = file_get_contents($logo_path);
+                    if ($image_data !== false) {
+                        $image_info = getimagesize($logo_path);
+                        if ($image_info) {
+                            $mime_type = $image_info['mime'];
+                            $base64_image = base64_encode($image_data);
+                            $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
+                            $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
+                            break;
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
+                }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
+            }
+        }
+    
+        if (!$found_logo) {
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
+            $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
+        }
+        
         ?>
 <!DOCTYPE html>
 <html>
@@ -728,6 +775,10 @@ class VMS_Reports_Handler extends Base
         font-size: 12px;
         margin: 20px;
         color: #333;
+    }
+
+    .logo {
+        text-align: center;
     }
 
     h1 {
@@ -824,6 +875,9 @@ class VMS_Reports_Handler extends Base
 </head>
 
 <body>
+    <div class="logo">
+        <?php  echo $logo_html ;?>
+    </div>
     <h1>Visitor Management System Report</h1>
     <p class="report-info">Report Period: <?php echo esc_html($from_date); ?> to <?php echo esc_html($to_date); ?></p>
 
@@ -876,6 +930,52 @@ class VMS_Reports_Handler extends Base
         $title = $section_info['title'];
         $data = $section_info['data'];
         $show_club = $section_info['show_club'];
+
+        // Format dates for display
+        $from_date = date('F j, Y', strtotime($from_date));
+        $to_date = date('F j, Y', strtotime($to_date));
+
+        // Handle logo - embed as base64 to ensure it displays reliably
+        $logo_html = '';       
+        $logo_paths = [
+            // File system paths only - remove the URL path
+            ABSPATH . 'wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home/wylly/dev/vms/wp-content/plugins/vms-plugin/assets/logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',
+            // Remove the Windows-style paths as they're likely not needed
+        ];
+
+        $found_logo = false;
+        foreach ($logo_paths as $logo_path) {
+            // Normalize path for consistent checking
+            $logo_path = str_replace(['\\', '//'], ['/', '/'], $logo_path);
+            
+            if (file_exists($logo_path) && is_readable($logo_path)) {
+                try {
+                    $image_data = file_get_contents($logo_path);
+                    if ($image_data !== false) {
+                        $image_info = getimagesize($logo_path);
+                        if ($image_info) {
+                            $mime_type = $image_info['mime'];
+                            $base64_image = base64_encode($image_data);
+                            $logo_html = '<img src="data:' . $mime_type . ';base64,' . $base64_image . '" alt="Nyeri Club" style="width: 120px; height: auto; display: block; margin: 0 auto 10px auto;">';
+                            $found_logo = true;
+                            error_log("VMS Export: Successfully loaded logo from: " . $logo_path);
+                            break;
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log("VMS Export: Error processing logo at {$logo_path} for guest {$guest->id}: " . $e->getMessage());
+                }
+            } else {
+                error_log("VMS Export: Logo not found or not readable: " . $logo_path);
+            }
+        }
+    
+        if (!$found_logo) {
+            error_log("VMS Export: No readable logo found for guest {$guest->id}. Using fallback text logo.");
+            $logo_html = '<div style="text-align: center; margin-bottom: 30px;"><span style="font-size: 36px; font-weight: bold; color: #1e3a8a; letter-spacing: 2px;">Nyeri Club</span></div>';
+        }
         ?>
 <!DOCTYPE html>
 <html>
@@ -890,6 +990,10 @@ class VMS_Reports_Handler extends Base
         font-size: 12px;
         margin: 20px;
         color: #333;
+    }
+
+    .logo {
+        text-align: center;
     }
 
     h1 {
@@ -946,6 +1050,9 @@ class VMS_Reports_Handler extends Base
 </head>
 
 <body>
+    <div class="logo">
+        <?php  echo $logo_html ;?>
+    </div>
     <h1><?php echo esc_html($title); ?></h1>
     <p class="report-info">Report Period: <?php echo esc_html($from_date); ?> to <?php echo esc_html($to_date); ?></p>
     <?php self::render_pdf_table($title, $data, $show_club); ?>
