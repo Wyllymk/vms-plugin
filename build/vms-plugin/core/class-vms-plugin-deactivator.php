@@ -69,7 +69,7 @@ class VMS_Plugin_Deactivator
         VMS_Roles::delete_roles();
         
         // Clear all temporary cached data
-        // self::vms_clear_transients();
+        self::vms_clear_transients();
 
         self::clear_transients();
         
