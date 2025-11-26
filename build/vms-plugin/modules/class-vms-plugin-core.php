@@ -75,7 +75,7 @@ class VMS_Core extends Base
      */
     public static function register_sms_callback_route(): void
     {
-        error_log('[VMS] Registering SMS callback route...');
+        // error_log('[VMS] Registering SMS callback route...');
         try {
             // Add rewrite rule
             add_rewrite_rule(
@@ -90,7 +90,7 @@ class VMS_Core extends Base
                 return $vars;
             });
 
-            error_log('[VMS] SMS callback rewrite rule and query var registered.');
+            // error_log('[VMS] SMS callback rewrite rule and query var registered.');
         } catch (Exception $e) {
             error_log('[VMS ERROR] Failed to register SMS callback route: ' . $e->getMessage());
         }
@@ -101,10 +101,10 @@ class VMS_Core extends Base
      */
     public static function register_sms_query_var($vars): array
     {
-        error_log('[VMS] Registering query var "vms_sms_callback"...');
+        // error_log('[VMS] Registering query var "vms_sms_callback"...');
         try {
             $vars[] = 'vms_sms_callback';
-            error_log('[VMS] Query var "vms_sms_callback" registered.');
+            // error_log('[VMS] Query var "vms_sms_callback" registered.');
         } catch (Exception $e) {
             error_log('[VMS ERROR] Failed to register query var: ' . $e->getMessage());
         }
@@ -117,8 +117,6 @@ class VMS_Core extends Base
      */
     public static function handle_sms_callback(): void
     {
-        error_log('[VMS] Handling SMS callback...');
-
         try {
             $query_var = get_query_var('vms_sms_callback');
 

@@ -367,8 +367,9 @@ class VMS_Export_Handler {
         $logo_html = '';
         $logo_paths = [
             get_template_directory() . '/assets/logo.png',
-            $_SERVER['DOCUMENT_ROOT'] . '/assets/logo.png',
-            'C:\laragon\www\VMS\wp-content\plugins\vms-plugin\assets\logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
+            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
         ];
        
         $found_logo = false;
@@ -612,13 +613,13 @@ class VMS_Export_Handler {
                     <thead>
                         <tr>
                             <th style="width: 5%;">#</th>
-                            <th style="width: 12%;">Visit Date</th>
-                            <th style="width: 20%;">Host Member</th>
+                            <th style="width: 15%;">Visit Date</th>
+                            <th style="width: 17%;">Host Member</th>
                             <th style="width: 10%;">Status</th>
                             <th style="width: 12%;">Sign In</th>
                             <th style="width: 12%;">Sign Out</th>
-                            <th style="width: 12%;">Duration</th>
-                            <th style="width: 17%;">Created</th>
+                            <th style="width: 10%;">Duration</th>
+                            <th style="width: 19%;">Created</th>
                         </tr>
                     </thead>
                     <tbody>';
@@ -684,8 +685,9 @@ class VMS_Export_Handler {
         $logo_html = '';
         $logo_paths = [
             get_template_directory() . '/assets/logo.png',
-            $_SERVER['DOCUMENT_ROOT'] . '/assets/logo.png',
-            'C:\laragon\www\VMS\wp-content\plugins\vms-plugin\assets\logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
+            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
         ];
        
         $found_logo = false;
@@ -937,13 +939,13 @@ class VMS_Export_Handler {
                     <thead>
                         <tr>
                             <th style="width: 5%;">#</th>
-                            <th style="width: 12%;">Visit Date</th>
-                            <th style="width: 20%;">Guest Name</th>
+                            <th style="width: 15%;">Visit Date</th>
+                            <th style="width: 17%;">Guest Name</th>
                             <th style="width: 10%;">Status</th>
                             <th style="width: 12%;">Sign In</th>
                             <th style="width: 12%;">Sign Out</th>
-                            <th style="width: 12%;">Duration</th>
-                            <th style="width: 17%;">Created</th>
+                            <th style="width: 10%;">Duration</th>
+                            <th style="width: 19%;">Created</th>
                         </tr>
                     </thead>
                     <tbody>';
@@ -999,8 +1001,9 @@ class VMS_Export_Handler {
         $logo_html = '';
         $logo_paths = [
             get_template_directory() . '/assets/logo.png',
-            $_SERVER['DOCUMENT_ROOT'] . '/assets/logo.png',
-            'C:\laragon\www\VMS\wp-content\plugins\vms-plugin\assets\logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
+            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
         ];
         
         $found_logo = false;
@@ -1242,7 +1245,7 @@ class VMS_Export_Handler {
             $html .= '
                 <table class="visits-table">
                     <thead>
-                        <tr>
+                        <tr>                           
                             <th style="width: 5%;">#</th>
                             <th style="width: 15%;">Visit Date</th>
                             <th style="width: 15%;">Sign In</th>
@@ -1302,8 +1305,9 @@ class VMS_Export_Handler {
         $logo_html = '';
         $logo_paths = [
             get_template_directory() . '/assets/logo.png',
-            $_SERVER['DOCUMENT_ROOT'] . '/assets/logo.png',
-            'C:\laragon\www\VMS\wp-content\plugins\vms-plugin\assets\logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
+            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
         ];
         
         $found_logo = false;
@@ -1605,8 +1609,9 @@ class VMS_Export_Handler {
         $logo_html = '';
         $logo_paths = [
             get_template_directory() . '/assets/logo.png',
-            $_SERVER['DOCUMENT_ROOT'] . '/assets/logo.png',
-            'C:\laragon\www\VMS\wp-content\plugins\vms-plugin\assets\logo.png',
+            '/home3/nyericlu/vms.nyericlub.co.ke/wp-content/plugins/vms-plugin/assets/logo.png',           
+            'home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
+            '\home3\nyericlu\vms.nyericlub.co.ke\wp-content\plugins\vms-plugin\assets\logo.png',
         ];
        
         $found_logo = false;
@@ -1858,12 +1863,12 @@ class VMS_Export_Handler {
                     <thead>
                         <tr>
                             <th style="width: 5%;">#</th>
-                            <th style="width: 12%;">Visit Date</th>
-                            <th style="width: 12%;">Sign In</th>
-                            <th style="width: 12%;">Sign Out</th>
-                            <th style="width: 12%;">Duration</th>
+                            <th style="width: 15%;">Visit Date</th>
+                            <th style="width: 15%;">Sign In</th>
+                            <th style="width: 15%;">Sign Out</th>
+                            <th style="width: 10%;">Duration</th>
                             <th style="width: 10%;">Status</th>
-                            <th style="width: 17%;">Created</th>
+                            <th style="width: 30%;">Created</th>
                         </tr>
                     </thead>
                     <tbody>';

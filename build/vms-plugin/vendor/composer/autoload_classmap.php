@@ -7,6 +7,7 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
+    'Dompdf\\Cpdf' => $vendorDir . '/dompdf/dompdf/lib/Cpdf.php',
     'WyllyMk\\VMS\\Base' => $baseDir . '/abstract/class-vms-plugin-base.php',
     'WyllyMk\\VMS\\Loader' => $baseDir . '/abstract/class-vms-plugin-loader.php',
     'WyllyMk\\VMS\\Singleton' => $baseDir . '/abstract/class-vms-plugin-singleton.php',
@@ -18,6 +19,7 @@ return array(
     'WyllyMk\\VMS\\VMS_Cron_Manager' => $baseDir . '/core/class-vms-plugin-cron.php',
     'WyllyMk\\VMS\\VMS_Database_Manager' => $baseDir . '/core/class-vms-plugin-database.php',
     'WyllyMk\\VMS\\VMS_Employee' => $baseDir . '/modules/class-vms-plugin-employees.php',
+    'WyllyMk\\VMS\\VMS_Export_Handler' => $baseDir . '/modules/class-vms-plugin-export.php',
     'WyllyMk\\VMS\\VMS_Guest' => $baseDir . '/modules/class-vms-plugin-guests.php',
     'WyllyMk\\VMS\\VMS_Member' => $baseDir . '/modules/class-vms-plugin-members.php',
     'WyllyMk\\VMS\\VMS_Page_Manager' => $baseDir . '/admin/class-vms-plugin-pages.php',
@@ -25,7 +27,7 @@ return array(
     'WyllyMk\\VMS\\VMS_Plugin_Deactivator' => $baseDir . '/core/class-vms-plugin-deactivator.php',
     'WyllyMk\\VMS\\VMS_Profile' => $baseDir . '/modules/class-vms-plugin-profile.php',
     'WyllyMk\\VMS\\VMS_Reciprocation' => $baseDir . '/modules/class-vms-plugin-reciprocation.php',
-    'WyllyMk\\VMS\\VMS_Reports' => $baseDir . '/modules/class-vms-plugin-reports.php',
+    'WyllyMk\\VMS\\VMS_Reports_Handler' => $baseDir . '/modules/class-vms-plugin-reports.php',
     'WyllyMk\\VMS\\VMS_Rewrite_Manager' => $baseDir . '/core/class-vms-plugin-rewrite.php',
     'WyllyMk\\VMS\\VMS_Roles' => $baseDir . '/security/class-vms-plugin-roles.php',
     'WyllyMk\\VMS\\VMS_SMS' => $baseDir . '/integrations/class-vms-plugin-sms.php',

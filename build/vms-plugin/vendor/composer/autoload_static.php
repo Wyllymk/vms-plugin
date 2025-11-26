@@ -4,14 +4,58 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a
+class ComposerStaticInit2d376fe1395492023cdb91315290f791
 {
     public static $files = array (
         'f6d4f6bcee7247df6b777884c3e22f98' => __DIR__ . '/..' . '/yahnis-elsts/plugin-update-checker/load-v5p6.php',
     );
 
+    public static $prefixLengthsPsr4 = array (
+        'S' => 
+        array (
+            'Svg\\' => 4,
+            'Sabberworm\\CSS\\' => 15,
+        ),
+        'M' => 
+        array (
+            'Masterminds\\' => 12,
+        ),
+        'F' => 
+        array (
+            'FontLib\\' => 8,
+        ),
+        'D' => 
+        array (
+            'Dompdf\\' => 7,
+        ),
+    );
+
+    public static $prefixDirsPsr4 = array (
+        'Svg\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/php-svg-lib/src/Svg',
+        ),
+        'Sabberworm\\CSS\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/sabberworm/php-css-parser/src',
+        ),
+        'Masterminds\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/masterminds/html5/src',
+        ),
+        'FontLib\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/php-font-lib/src/FontLib',
+        ),
+        'Dompdf\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/dompdf/src',
+        ),
+    );
+
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'Dompdf\\Cpdf' => __DIR__ . '/..' . '/dompdf/dompdf/lib/Cpdf.php',
         'WyllyMk\\VMS\\Base' => __DIR__ . '/../..' . '/abstract/class-vms-plugin-base.php',
         'WyllyMk\\VMS\\Loader' => __DIR__ . '/../..' . '/abstract/class-vms-plugin-loader.php',
         'WyllyMk\\VMS\\Singleton' => __DIR__ . '/../..' . '/abstract/class-vms-plugin-singleton.php',
@@ -23,6 +67,7 @@ class ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a
         'WyllyMk\\VMS\\VMS_Cron_Manager' => __DIR__ . '/../..' . '/core/class-vms-plugin-cron.php',
         'WyllyMk\\VMS\\VMS_Database_Manager' => __DIR__ . '/../..' . '/core/class-vms-plugin-database.php',
         'WyllyMk\\VMS\\VMS_Employee' => __DIR__ . '/../..' . '/modules/class-vms-plugin-employees.php',
+        'WyllyMk\\VMS\\VMS_Export_Handler' => __DIR__ . '/../..' . '/modules/class-vms-plugin-export.php',
         'WyllyMk\\VMS\\VMS_Guest' => __DIR__ . '/../..' . '/modules/class-vms-plugin-guests.php',
         'WyllyMk\\VMS\\VMS_Member' => __DIR__ . '/../..' . '/modules/class-vms-plugin-members.php',
         'WyllyMk\\VMS\\VMS_Page_Manager' => __DIR__ . '/../..' . '/admin/class-vms-plugin-pages.php',
@@ -30,7 +75,7 @@ class ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a
         'WyllyMk\\VMS\\VMS_Plugin_Deactivator' => __DIR__ . '/../..' . '/core/class-vms-plugin-deactivator.php',
         'WyllyMk\\VMS\\VMS_Profile' => __DIR__ . '/../..' . '/modules/class-vms-plugin-profile.php',
         'WyllyMk\\VMS\\VMS_Reciprocation' => __DIR__ . '/../..' . '/modules/class-vms-plugin-reciprocation.php',
-        'WyllyMk\\VMS\\VMS_Reports' => __DIR__ . '/../..' . '/modules/class-vms-plugin-reports.php',
+        'WyllyMk\\VMS\\VMS_Reports_Handler' => __DIR__ . '/../..' . '/modules/class-vms-plugin-reports.php',
         'WyllyMk\\VMS\\VMS_Rewrite_Manager' => __DIR__ . '/../..' . '/core/class-vms-plugin-rewrite.php',
         'WyllyMk\\VMS\\VMS_Roles' => __DIR__ . '/../..' . '/security/class-vms-plugin-roles.php',
         'WyllyMk\\VMS\\VMS_SMS' => __DIR__ . '/../..' . '/integrations/class-vms-plugin-sms.php',
@@ -42,7 +87,9 @@ class ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->classMap = ComposerStaticInit165ba97d10d33e0e016eacb63bdd1a5a::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit2d376fe1395492023cdb91315290f791::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit2d376fe1395492023cdb91315290f791::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit2d376fe1395492023cdb91315290f791::$classMap;
 
         }, null, ClassLoader::class);
     }

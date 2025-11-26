@@ -641,7 +641,7 @@ class VMS_Guest extends Base
             $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
             $guests_table       = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
             $monthly_limit      = 4;
-            $yearly_limit       = 12;
+            $yearly_limit       = 24;
 
             // -------------------------------------------------------------
             // 1. Get guest data
@@ -1388,6 +1388,20 @@ class VMS_Guest extends Base
         if ($existing_guest) {
             $guest_id = $existing_guest->id;
             error_log("Existing guest found with ID: $guest_id");
+            // Update guest info (excluding guest_status)
+            $wpdb->update(
+                $guests_table,
+                [
+                    'first_name'       => $first_name,
+                    'last_name'        => $last_name,
+                    'phone_number'     => $phone_number,
+                    'receive_emails'   => $receive_emails,
+                    'receive_messages' => $receive_messages,
+                ],
+                ['id' => $guest_id],
+                ['%s', '%s', '%s', '%s', '%s'],
+                ['%d']
+            );
         } else {
             // Create new guest
             $insert_guest = $wpdb->insert(
@@ -1460,7 +1474,7 @@ class VMS_Guest extends Base
         error_log("Guest visit counts: monthly=$monthly_visits, yearly=$yearly_visits");
 
         $monthly_limit = 4;
-        $yearly_limit  = 12;
+        $yearly_limit  = 24;
 
         if ($monthly_visits >= $monthly_limit) {
             error_log('Monthly limit reached.');
@@ -1910,7 +1924,7 @@ class VMS_Guest extends Base
             ));
 
             $monthly_limit = 4;
-            $yearly_limit  = 12;
+            $yearly_limit  = 24;
 
             if ($monthly_visits >= $monthly_limit) {
                 error_log("VMS: Monthly limit reached for guest ID $guest_id.");
@@ -2481,7 +2495,7 @@ class VMS_Guest extends Base
 
             $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
             $monthly_limit = 4;
-            $yearly_limit = 12;
+            $yearly_limit = 24;
             $today = date('Y-m-d');
 
             // --- Date Ranges ---
@@ -2813,7 +2827,7 @@ class VMS_Guest extends Base
         $guest_visits_table = VMS_Config::get_table_name(VMS_Config::GUEST_VISITS_TABLE);
         $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
         $monthly_limit = 4;
-        $yearly_limit = 12;
+        $yearly_limit = 24;
         
         // Get all active guests
         $guest_ids = $wpdb->get_col("SELECT id FROM $guests_table WHERE guest_status = 'active'");

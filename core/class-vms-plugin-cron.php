@@ -36,6 +36,7 @@ class VMS_Cron_Manager
         'auto_sign_out_recip_members_at_midnight'               => 'daily',
         'reset_monthly_guest_limits'                            => 'monthly',
         'reset_yearly_guest_limits'                             => 'yearly',
+        'reset_yearly_recip_limits'                             => 'yearly',
     ];
 
     /**
@@ -124,7 +125,7 @@ class VMS_Cron_Manager
             'reset_monthly_guest_limits' =>
                 strtotime('first day of next month midnight', $now),
 
-            'reset_yearly_guest_limits',
+            'reset_yearly_guest_limits', 'reset_yearly_recip_limits',
             'cleanup_old_sms_logs' =>
                 strtotime('first day of January next year midnight', $now),
 

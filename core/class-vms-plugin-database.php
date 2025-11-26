@@ -398,13 +398,14 @@ class VMS_Database_Manager
      *
      * @since 1.0.0
      * @return void
-     */
+     */    
     private static function create_reciprocating_members_visits_table(): void
     {
         $sql = "
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             member_id BIGINT(20) UNSIGNED NOT NULL,
             visit_date DATE NOT NULL,
+            visit_purpose ENUM('golf_tournament','casual_visit') DEFAULT NULL,
             status ENUM('approved','unapproved','cancelled','suspended','banned') NOT NULL DEFAULT 'approved',
             sign_in_time DATETIME DEFAULT NULL,
             sign_out_time DATETIME DEFAULT NULL,
