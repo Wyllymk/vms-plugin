@@ -36,7 +36,7 @@ class VMS_Page_Manager
         ['title' => 'Reciprocating Member Details', 'template' => 'page-templates/page-reciprocating-member-details.php'],
         ['title' => 'Clubs', 'template' => 'page-templates/page-clubs.php'],
         ['title' => 'Reports', 'template' => 'page-templates/page-reports.php'],
-        ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']
+        ['title' => 'Settings', 'template' => 'page-templates/page-settings.php']        
     ];
 
     public static function create_all_pages(): void
