@@ -91,10 +91,16 @@ foreach ($cron_hooks as $hook) {
 error_log('VMS Plugin scheduled events cleared during uninstall');
 
 // -----------------------------------------------------------------------------
-// Step 2: Drop all custom database tables
+// Step 2: Drop all custom database tables with proper escaping
 // -----------------------------------------------------------------------------
-$wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}vms_visitors");
-$wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}vms_visitor_logs");
+$wpdb->query($wpdb->prepare(
+    "DROP TABLE IF EXISTS %s",
+    $wpdb->prefix . 'vms_visitors'
+));
+$wpdb->query($wpdb->prepare(
+    "DROP TABLE IF EXISTS %s",
+    $wpdb->prefix . 'vms_visitor_logs'
+));
 
 error_log('VMS Plugin database tables deleted during uninstall');
 
@@ -116,28 +122,39 @@ foreach ($plugin_options as $option) {
     delete_option($option);
 }
 
-// Delete all remaining options starting with vms_
-$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'vms_%'");
+// Delete all remaining options starting with vms_ using prepared statement
+$wpdb->query($wpdb->prepare(
+    "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+    'vms_%'
+));
 
 error_log('VMS Plugin options deleted during uninstall');
 
 // -----------------------------------------------------------------------------
-// Step 4: Delete all transients (regular and site-wide)
+// Step 4: Delete all transients (regular and site-wide) with prepared statements
 // -----------------------------------------------------------------------------
-$wpdb->query("
-    DELETE FROM {$wpdb->options}
-    WHERE option_name LIKE '_transient_vms_%'
-    OR option_name LIKE '_transient_timeout_vms_%'
-    OR option_name LIKE '_site_transient_vms_%'
-    OR option_name LIKE '_site_transient_timeout_vms_%'
-");
+$transient_patterns = [
+    '_transient_vms_%',
+    '_transient_timeout_vms_%',
+    '_site_transient_vms_%',
+    '_site_transient_timeout_vms_%'
+];
+
+$where_clause = implode(' OR ', array_fill(0, count($transient_patterns), 'option_name LIKE %s'));
+$wpdb->query($wpdb->prepare(
+    "DELETE FROM {$wpdb->options} WHERE " . $where_clause,
+    ...$transient_patterns
+));
 
 error_log('VMS Plugin transients deleted during uninstall');
 
 // -----------------------------------------------------------------------------
-// Step 5: Delete all user metadata created by the plugin
+// Step 5: Delete all user metadata created by the plugin with prepared statement
 // -----------------------------------------------------------------------------
-$wpdb->query("DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE 'vms_%'");
+$wpdb->query($wpdb->prepare(
+    "DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE %s",
+    'vms_%'
+));
 
 error_log('VMS Plugin user meta deleted during uninstall');
 
@@ -225,18 +242,23 @@ foreach ($taxonomies as $taxonomy) {
 error_log('VMS Plugin custom taxonomies deleted during uninstall');
 
 // -----------------------------------------------------------------------------
-// Step 10: Delete comment meta created by the plugin
+// Step 10: Delete comment meta created by the plugin with prepared statement
 // -----------------------------------------------------------------------------
-$wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE meta_key LIKE 'vms_%'");
+$wpdb->query($wpdb->prepare(
+    "DELETE FROM {$wpdb->commentmeta} WHERE meta_key LIKE %s",
+    'vms_%'
+));
 
 error_log('VMS Plugin comment meta deleted during uninstall');
 
 // -----------------------------------------------------------------------------
-// Step 11: Delete plugin-created WordPress pages (if any)
+// Step 11: Delete plugin-created WordPress pages (if any) with prepared statement
 // -----------------------------------------------------------------------------
-$pages = $wpdb->get_results(
-    "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'page' AND post_name LIKE 'vms_%'"
-);
+$pages = $wpdb->get_results($wpdb->prepare(
+    "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_name LIKE %s",
+    'page',
+    'vms_%'
+));
 
 foreach ($pages as $page) {
     wp_delete_post($page->ID, true);

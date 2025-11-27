@@ -491,8 +491,7 @@ class VMS_Database_Manager
             KEY idx_entity_type (entity_type),
             KEY idx_entity_id (entity_id),
             KEY idx_created_at (created_at)
-        ");       
-       
+        ");     
     }
 
     /* ===============================================================
