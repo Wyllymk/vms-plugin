@@ -13,6 +13,7 @@ return array(
     'WyllyMk\\VMS\\Singleton' => $baseDir . '/abstract/class-vms-plugin-singleton.php',
     'WyllyMk\\VMS\\VMS_Accommodation' => $baseDir . '/modules/class-vms-plugin-accomodation.php',
     'WyllyMk\\VMS\\VMS_Admin' => $baseDir . '/admin/class-vms-plugin-admin.php',
+    'WyllyMk\\VMS\\VMS_Audit_Trail' => $baseDir . '/modules/class-vms-plugin-audit-trail.php',
     'WyllyMk\\VMS\\VMS_Clubs' => $baseDir . '/modules/class-vms-plugin-clubs.php',
     'WyllyMk\\VMS\\VMS_Config' => $baseDir . '/core/class-vms-plugin-config.php',
     'WyllyMk\\VMS\\VMS_Core' => $baseDir . '/modules/class-vms-plugin-core.php',

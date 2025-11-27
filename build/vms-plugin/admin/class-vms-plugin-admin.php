@@ -93,6 +93,15 @@ class VMS_Admin extends Base
             'vms-sms-logs',
             [$this, 'render_sms_logs_page']
         );
+
+        add_submenu_page(
+            'vms-settings',
+            __('Audit Trail', 'vms-plugin'),
+            __('Audit Trail', 'vms-plugin'),
+            'manage_options',
+            'vms-audit-trail',
+            [$this, 'render_audit_trail_page']
+        );
     }
 
     /**
@@ -226,7 +235,7 @@ class VMS_Admin extends Base
      */
     public function enqueue_admin_scripts($hook): void
     {
-        if (!in_array($hook, ['toplevel_page_vms-settings', 'vms_page_vms-sms-logs'])) {
+        if (!in_array($hook, ['toplevel_page_vms-settings', 'vms_page_vms-sms-logs', 'vms_page_vms-audit-trail'])) {
             return;
         }
 
@@ -790,6 +799,21 @@ class VMS_Admin extends Base
         color: #c2185b;
     }
 
+    .role-supplier {
+        background: #e8eaf6;
+        color: #283593;
+    }
+
+    .role-accommodation_guest {
+        background: #f3e5f5;
+        color: #6a1b9a;
+    }
+
+    .role-reciprocating_member {
+        background: #e0f2f1;
+        color: #00695c;
+    }
+
     .text-muted {
         color: #666;
     }
@@ -1189,6 +1213,422 @@ class VMS_Admin extends Base
 <p class="description">
     <?php esc_html_e('Secret for callback verification (required if status URL is provided).', 'vms-plugin'); ?>
 </p>
+<?php
+    }
+
+    /**
+     * Render audit trail page
+     */
+    public function render_audit_trail_page(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die(
+                __('You do not have sufficient permissions to access this page.', 'vms-plugin'),
+                __('Access Denied', 'vms-plugin'),
+                ['response' => 403]
+            );
+        }
+
+        // Get filter parameters
+        $user_id = isset($_GET['user_id']) ? absint($_GET['user_id']) : null;
+        $action_category = isset($_GET['action_category']) ? sanitize_text_field($_GET['action_category']) : null;
+        $action_type = isset($_GET['action_type']) ? sanitize_text_field($_GET['action_type']) : null;
+        $entity_type = isset($_GET['entity_type']) ? sanitize_text_field($_GET['entity_type']) : null;
+        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : null;
+        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : null;
+
+        // Get pagination parameters
+        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $per_page = 50;
+
+        // Get logs with filters
+        $logs_data = VMS_Audit_Trail::get_logs([
+            'page' => $current_page,
+            'per_page' => $per_page,
+            'user_id' => $user_id,
+            'action_category' => $action_category,
+            'action_type' => $action_type,
+            'entity_type' => $entity_type,
+            'date_from' => $date_from,
+            'date_to' => $date_to,
+        ]);
+
+        $logs = $logs_data['logs'];
+        $total_logs = $logs_data['total_count'];
+        $total_pages = $logs_data['total_pages'];
+
+        // Get all users for filter dropdown
+        $users = get_users(['fields' => ['ID', 'display_name']]);
+        ?>
+<div class="wrap">
+    <h1><?php esc_html_e('Audit Trail', 'vms-plugin'); ?></h1>
+
+    <!-- Summary Info -->
+    <div class="logs-summary">
+        <p><strong><?php esc_html_e('Total Audit Logs:', 'vms-plugin'); ?></strong>
+            <?php echo number_format($total_logs); ?></p>
+        <?php if ($total_logs > 0): ?>
+        <p><?php printf(__('Showing logs %d to %d of %d', 'vms-plugin'),
+            (($current_page - 1) * $per_page) + 1,
+            min($current_page * $per_page, $total_logs),
+            $total_logs
+        ); ?></p>
+        <?php endif; ?>
+    </div>
+
+    <!-- Filters -->
+    <div class="audit-filters" style="background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd;">
+        <h3><?php esc_html_e('Filter Logs', 'vms-plugin'); ?></h3>
+        <form method="get" action="">
+            <input type="hidden" name="page" value="vms-audit-trail">
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: end;">
+                <div>
+                    <label for="user_id"><?php esc_html_e('User:', 'vms-plugin'); ?></label><br>
+                    <select name="user_id" id="user_id" style="min-width: 150px;">
+                        <option value=""><?php esc_html_e('All Users', 'vms-plugin'); ?></option>
+                        <?php foreach ($users as $user): ?>
+                        <option value="<?php echo esc_attr($user->ID); ?>" <?php selected($user_id, $user->ID); ?>>
+                            <?php echo esc_html($user->display_name); ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="action_category"><?php esc_html_e('Category:', 'vms-plugin'); ?></label><br>
+                    <select name="action_category" id="action_category" style="min-width: 120px;">
+                        <option value=""><?php esc_html_e('All Categories', 'vms-plugin'); ?></option>
+                        <option value="authentication" <?php selected($action_category, 'authentication'); ?>>
+                            <?php esc_html_e('Authentication', 'vms-plugin'); ?></option>
+                        <option value="employee" <?php selected($action_category, 'employee'); ?>>
+                            <?php esc_html_e('Employee', 'vms-plugin'); ?></option>
+                        <option value="guest" <?php selected($action_category, 'guest'); ?>>
+                            <?php esc_html_e('Guest', 'vms-plugin'); ?></option>
+                        <option value="visit" <?php selected($action_category, 'visit'); ?>>
+                            <?php esc_html_e('Visit', 'vms-plugin'); ?></option>
+                        <option value="status" <?php selected($action_category, 'status'); ?>>
+                            <?php esc_html_e('Status', 'vms-plugin'); ?></option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="entity_type"><?php esc_html_e('Entity Type:', 'vms-plugin'); ?></label><br>
+                    <select name="entity_type" id="entity_type" style="min-width: 120px;">
+                        <option value=""><?php esc_html_e('All Types', 'vms-plugin'); ?></option>
+                        <option value="user" <?php selected($entity_type, 'user'); ?>>
+                            <?php esc_html_e('User', 'vms-plugin'); ?></option>
+                        <option value="employee" <?php selected($entity_type, 'employee'); ?>>
+                            <?php esc_html_e('Employee', 'vms-plugin'); ?></option>
+                        <option value="guest" <?php selected($entity_type, 'guest'); ?>>
+                            <?php esc_html_e('Guest', 'vms-plugin'); ?></option>
+                        <option value="visit" <?php selected($entity_type, 'visit'); ?>>
+                            <?php esc_html_e('Visit', 'vms-plugin'); ?></option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="date_from"><?php esc_html_e('From Date:', 'vms-plugin'); ?></label><br>
+                    <input type="date" name="date_from" id="date_from" value="<?php echo esc_attr($date_from); ?>">
+                </div>
+
+                <div>
+                    <label for="date_to"><?php esc_html_e('To Date:', 'vms-plugin'); ?></label><br>
+                    <input type="date" name="date_to" id="date_to" value="<?php echo esc_attr($date_to); ?>">
+                </div>
+
+                <div>
+                    <button type="submit" class="button"><?php esc_html_e('Filter', 'vms-plugin'); ?></button>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=vms-audit-trail')); ?>"
+                        class="button"><?php esc_html_e('Clear Filters', 'vms-plugin'); ?></a>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Logs Table -->
+    <table class="wp-list-table widefat fixed striped audit-logs-table">
+        <thead>
+            <tr>
+                <th class="column-id"><?php esc_html_e('ID', 'vms-plugin'); ?></th>
+                <th class="column-user"><?php esc_html_e('User', 'vms-plugin'); ?></th>
+                <th class="column-action"><?php esc_html_e('Action', 'vms-plugin'); ?></th>
+                <th class="column-category"><?php esc_html_e('Category', 'vms-plugin'); ?></th>
+                <th class="column-entity"><?php esc_html_e('Entity', 'vms-plugin'); ?></th>
+                <th class="column-changes"><?php esc_html_e('Changes', 'vms-plugin'); ?></th>
+                <th class="column-ip"><?php esc_html_e('IP Address', 'vms-plugin'); ?></th>
+                <th class="column-date"><?php esc_html_e('Date', 'vms-plugin'); ?></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (!empty($logs)): ?>
+            <?php foreach ($logs as $log): ?>
+            <tr>
+                <td class="column-id"><?php echo esc_html($log->id); ?></td>
+                <td class="column-user">
+                    <?php if ($log->user_id): ?>
+                    <?php $user = get_userdata($log->user_id); ?>
+                    <strong><?php echo esc_html($user ? $user->display_name : 'Unknown User'); ?></strong>
+                    <br><small><?php echo esc_html($log->user_role); ?></small>
+                    <?php else: ?>
+                    <em><?php esc_html_e('System', 'vms-plugin'); ?></em>
+                    <?php endif; ?>
+                </td>
+                <td class="column-action">
+                    <span
+                        class="action-badge action-<?php echo esc_attr(strtolower(str_replace(' ', '-', $log->action_type))); ?>">
+                        <?php echo esc_html(ucwords(str_replace('_', ' ', $log->action_type))); ?>
+                    </span>
+                </td>
+                <td class="column-category">
+                    <span class="category-badge category-<?php echo esc_attr($log->action_category); ?>">
+                        <?php echo esc_html(ucfirst($log->action_category)); ?>
+                    </span>
+                </td>
+                <td class="column-entity">
+                    <?php if ($log->entity_type && $log->entity_id): ?>
+                    <strong><?php echo esc_html(ucfirst($log->entity_type)); ?></strong>
+                    <br><small>ID: <?php echo esc_html($log->entity_id); ?></small>
+                    <?php else: ?>
+                    <em><?php esc_html_e('N/A', 'vms-plugin'); ?></em>
+                    <?php endif; ?>
+                </td>
+                <td class="column-changes">
+                    <?php if ($log->old_values || $log->new_values): ?>
+                    <div class="changes-preview">
+                        <?php if ($log->old_values): ?>
+                        <div class="old-values">
+                            <small><strong><?php esc_html_e('Before:', 'vms-plugin'); ?></strong></small>
+                            <pre><?php echo esc_html(wp_json_encode($log->old_values, JSON_PRETTY_PRINT)); ?></pre>
+                        </div>
+                        <?php endif; ?>
+                        <?php if ($log->new_values): ?>
+                        <div class="new-values">
+                            <small><strong><?php esc_html_e('After:', 'vms-plugin'); ?></strong></small>
+                            <pre><?php echo esc_html(wp_json_encode($log->new_values, JSON_PRETTY_PRINT)); ?></pre>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php else: ?>
+                    <em><?php esc_html_e('No changes', 'vms-plugin'); ?></em>
+                    <?php endif; ?>
+                </td>
+                <td class="column-ip">
+                    <?php echo esc_html($log->ip_address ?: 'N/A'); ?>
+                </td>
+                <td class="column-date">
+                    <span title="<?php echo esc_attr($log->created_at); ?>">
+                        <?php echo esc_html(date('M j, Y g:i A', strtotime($log->created_at))); ?>
+                    </span>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            <?php else: ?>
+            <tr>
+                <td colspan="8" class="no-logs"><?php esc_html_e('No audit logs found.', 'vms-plugin'); ?></td>
+            </tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <?php if ($total_pages > 1): ?>
+    <div class="tablenav">
+        <div class="tablenav-pages">
+            <span class="displaying-num">
+                <?php printf(_n('%s item', '%s items', $total_logs, 'vms-plugin'), number_format_i18n($total_logs)); ?>
+            </span>
+            <?php
+            $pagination_args = [
+                'base' => add_query_arg('paged', '%#%'),
+                'format' => '',
+                'prev_text' => '&laquo; ' . __('Previous', 'vms-plugin'),
+                'next_text' => __('Next', 'vms-plugin') . ' &raquo;',
+                'total' => $total_pages,
+                'current' => $current_page,
+                'show_all' => false,
+                'end_size' => 1,
+                'mid_size' => 2,
+                'type' => 'plain',
+            ];
+            echo paginate_links($pagination_args);
+            ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<style>
+.audit-filters {
+    border-radius: 5px;
+}
+
+.audit-filters label {
+    font-weight: 600;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.audit-filters select,
+.audit-filters input {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.audit-logs-table {
+    margin-top: 20px;
+}
+
+.audit-logs-table th,
+.audit-logs-table td {
+    padding: 12px 8px;
+    vertical-align: top;
+}
+
+.column-id {
+    width: 60px;
+    text-align: center;
+}
+
+.column-user {
+    width: 150px;
+}
+
+.column-action {
+    width: 120px;
+}
+
+.column-category {
+    width: 100px;
+}
+
+.column-entity {
+    width: 120px;
+}
+
+.column-changes {
+    width: 250px;
+}
+
+.column-ip {
+    width: 120px;
+}
+
+.column-date {
+    width: 140px;
+}
+
+.action-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.category-badge {
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.category-authentication {
+    background: #e8f5e8;
+    color: #2e7d32;
+}
+
+.category-employee {
+    background: #fff3e0;
+    color: #ef6c00;
+}
+
+.category-guest {
+    background: #fce4ec;
+    color: #c2185b;
+}
+
+.category-visit {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.category-status {
+    background: #e0f2f1;
+    color: #00695c;
+}
+
+.changes-preview {
+    max-width: 250px;
+}
+
+.changes-preview pre {
+    font-size: 11px;
+    line-height: 1.3;
+    margin: 5px 0;
+    padding: 5px;
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.old-values {
+    margin-bottom: 10px;
+}
+
+.old-values pre {
+    background: #ffebee;
+    border-color: #ffcdd2;
+}
+
+.new-values pre {
+    background: #e8f5e8;
+    border-color: #c8e6c9;
+}
+
+.no-logs {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+}
+
+.tablenav {
+    margin-top: 20px;
+    padding: 10px 0;
+}
+
+.tablenav-pages {
+    float: right;
+}
+
+.tablenav-pages .page-numbers {
+    display: inline-block;
+    padding: 8px 12px;
+    margin: 0 2px;
+    text-decoration: none;
+    border: 1px solid #ddd;
+    color: #0073aa;
+}
+
+.tablenav-pages .page-numbers.current {
+    background: #0073aa;
+    color: white;
+    border-color: #0073aa;
+}
+
+.tablenav-pages .page-numbers:hover {
+    background: #f1f1f1;
+}
+</style>
 <?php
     }
 }

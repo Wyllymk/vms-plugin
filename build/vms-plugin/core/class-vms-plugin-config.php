@@ -31,24 +31,25 @@ class VMS_Config
      */
     
     // Guests tables
-    public const GUESTS_TABLE = 'vms_guests';
-    public const GUEST_VISITS_TABLE = 'vms_guest_visits';
+    public const GUESTS_TABLE                   = 'vms_guests';
+    public const GUEST_VISITS_TABLE             = 'vms_guest_visits';
 
     // Accomodation Guests tables
-    public const A_GUESTS_TABLE = 'vms_a_guests';
-    public const A_GUEST_VISITS_TABLE = 'vms_a_guest_visits';
+    public const A_GUESTS_TABLE                 = 'vms_a_guests';
+    public const A_GUEST_VISITS_TABLE           = 'vms_a_guest_visits';
 
     // Suppliers tables
-    public const SUPPLIERS_TABLE = 'vms_suppliers';
-    public const SUPPLIER_VISITS_TABLE = 'vms_supplier_visits';
+    public const SUPPLIERS_TABLE                = 'vms_suppliers';
+    public const SUPPLIER_VISITS_TABLE          = 'vms_supplier_visits';
     
     // Reciprocating members tables
-    public const RECIP_MEMBERS_TABLE = 'vms_reciprocating_members';
-    public const RECIP_CLUBS_TABLE = 'vms_reciprocating_clubs';
-    public const RECIP_MEMBERS_VISITS_TABLE = 'vms_recip_members_visits';
+    public const RECIP_MEMBERS_TABLE            = 'vms_reciprocating_members';
+    public const RECIP_CLUBS_TABLE              = 'vms_reciprocating_clubs';
+    public const RECIP_MEMBERS_VISITS_TABLE     = 'vms_recip_members_visits';
     
     // Utility tables
-    public const SMS_LOGS_TABLE = 'vms_sms_logs';
+    public const SMS_LOGS_TABLE                 = 'vms_sms_logs';
+    public const AUDIT_LOGS                     = 'vms_audit_trail';
 
     /**
      * Plugin version constant

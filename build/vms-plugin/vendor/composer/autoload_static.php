@@ -61,6 +61,7 @@ class ComposerStaticInit2d376fe1395492023cdb91315290f791
         'WyllyMk\\VMS\\Singleton' => __DIR__ . '/../..' . '/abstract/class-vms-plugin-singleton.php',
         'WyllyMk\\VMS\\VMS_Accommodation' => __DIR__ . '/../..' . '/modules/class-vms-plugin-accomodation.php',
         'WyllyMk\\VMS\\VMS_Admin' => __DIR__ . '/../..' . '/admin/class-vms-plugin-admin.php',
+        'WyllyMk\\VMS\\VMS_Audit_Trail' => __DIR__ . '/../..' . '/modules/class-vms-plugin-audit-trail.php',
         'WyllyMk\\VMS\\VMS_Clubs' => __DIR__ . '/../..' . '/modules/class-vms-plugin-clubs.php',
         'WyllyMk\\VMS\\VMS_Config' => __DIR__ . '/../..' . '/core/class-vms-plugin-config.php',
         'WyllyMk\\VMS\\VMS_Core' => __DIR__ . '/../..' . '/modules/class-vms-plugin-core.php',

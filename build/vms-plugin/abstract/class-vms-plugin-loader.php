@@ -262,7 +262,13 @@ final class Loader extends Base
          * Handles Reports functionalities.
          */
         VMS_Reports_Handler::get_instance()->init();
-    
+
+        /**
+         * Load Audit Trail module.
+         * Handles audit trail and activity logging.
+         */
+        VMS_Audit_Trail::get_instance()->init();
+
     }
 
     /**

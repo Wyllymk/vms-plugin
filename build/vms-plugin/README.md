@@ -1,119 +1,353 @@
-# VMS Plugin #
-**Contributors:** (this should be a list of wordpress.org userid's)  
-**Donate link:** https://example.com/  
-**Tags:** comments, spam  
-**Requires at least:** 4.5  
+# Visitor Management System (VMS) Plugin
+
+**Contributors:** Wilson Mbuthia (wyllymk)  
+**Tags:** visitor management, guest tracking, access control, wordpress plugin  
+**Requires at least:** 6.0  
 **Tested up to:** 6.8.3  
-**Requires PHP:** 5.6  
-**Stable tag:** 0.1.0  
+**Requires PHP:** 7.4  
+**Stable tag:** 1.0.0  
 **License:** GPLv2 or later  
-**License URI:** https://www.gnu.org/licenses/gpl-2.0.html  
+**License URI:** https://www.gnu.org/licenses/gpl-2.0.html
 
-Here is a short description of the plugin.  This should be no more than 150 characters.  No markup here.
+A comprehensive visitor management system for clubs and organizations, built with WordPress. Track guests, manage access, send notifications, and maintain detailed visitor logs.
 
-## Description ##
+## Description
 
-This is the long description.  No limit, and you can use Markdown (as well as in the following sections).
+The Visitor Management System (VMS) Plugin provides a complete solution for managing visitors, guests, and access control in club environments. The system supports multiple user roles with specific permissions and capabilities, ensuring secure and efficient visitor management.
 
-For backwards compatibility, if this section is missing, the full length of the short description will be used, and
-Markdown parsed.
+### Key Features
 
-A few notes about the sections above:
+-   **Multi-role User System**: Support for Members, Chairman, General Manager, Reception, Gate, and Admin roles
+-   **Guest Registration & Tracking**: Register guests with visit dates, host information, and status tracking
+-   **Automated Notifications**: SMS and email notifications for visit updates and status changes
+-   **Visit Limits & Enforcement**: Automatic enforcement of monthly (4 visits) and yearly (24 visits) limits
+-   **Real-time Sign-in/Sign-out**: Track guest arrival and departure times
+-   **Comprehensive Reporting**: Detailed reports and analytics for management
+-   **Audit Trail**: Complete logging of all system activities
 
-*   "Contributors" is a comma separated list of wp.org/wp-plugins.org usernames
-*   "Tags" is a comma separated list of tags that apply to the plugin
-*   "Requires at least" is the lowest version that the plugin will work on
-*   "Tested up to" is the highest version that you've *successfully used to test the plugin*. Note that it might work on
-higher versions... this is just the highest one you've verified.
-*   Stable tag should indicate the Subversion "tag" of the latest stable version, or "trunk," if you use `/trunk/` for
-stable.
+### System Capabilities by User Role
 
-    Note that the `readme.txt` of the stable tag is the one that is considered the defining one for the plugin, so
-if the `/trunk/readme.txt` file says that the stable tag is `4.3`, then it is `/tags/4.3/readme.txt` that'll be used
-for displaying information about the plugin.  In this situation, the only thing considered from the trunk `readme.txt`
-is the stable tag pointer.  Thus, if you develop in trunk, you can update the trunk `readme.txt` to reflect changes in
-your in-development version, without having that information incorrectly disclosed about the current stable version
-that lacks those changes -- as long as the trunk's `readme.txt` points to the correct stable tag.
+#### 🔐 **Member**
 
-    If no stable tag is provided, it is assumed that trunk is stable, but you should specify "trunk" if that's where
-you put the stable version, in order to eliminate any doubt.
+Members can manage their own guest visits and view their visit history.
 
-## Installation ##
+**What Members Can Do:**
 
-This section describes how to install the plugin and get it working.
+-   Register guests for future visits (up to 4 per month, 24 per year)
+-   View and manage their registered guests
+-   Cancel upcoming visits
+-   Receive notifications about visit status changes
 
-e.g.
+**Member Workflow:**
 
-1. Upload `plugin-name.php` to the `/wp-content/plugins/` directory
-1. Activate the plugin through the 'Plugins' menu in WordPress
-1. Place `<?php do_action('plugin_name_hook'); ?>` in your templates
+1. **Registration**: Members register through the system and are approved by reception
+2. **Guest Registration**: After approval, members can register guests for specific dates
+3. **Visit Management**: View upcoming visits, cancel if needed
+4. **Notifications**: Receive SMS/email updates about visit approvals and changes
 
-## Frequently Asked Questions ##
+#### 👑 **Chairman**
 
-### A question that someone might have ###
+Chairmen have elevated privileges for guest management and system oversight.
 
-An answer to that question.
+**What Chairmen Can Do:**
 
-### What about foo bar? ###
+-   Register personal guests for visits
+-   Register courtesy guests (without host requirements)
+-   View comprehensive reports across the system
+-   Access supplier, accommodation, and reciprocation member information
+-   Edit system data (same permissions as General Manager)
+-   Receive detailed system analytics
 
-Answer to foo bar dilemma.
+**Chairman Workflow:**
 
-## Screenshots ##
+1. **Guest Registration**: Register personal guests or courtesy guests directly
+2. **System Oversight**: Access reports on visitor activity, system usage
+3. **Data Management**: View and edit supplier, accommodation, and club information
+4. **Approval Authority**: Can approve special visit requests
 
-### 1. This screen shot description corresponds to screenshot-1.(png|jpg|jpeg|gif). Note that the screenshot is taken from ###
-![This screen shot description corresponds to screenshot-1.(png|jpg|jpeg|gif). Note that the screenshot is taken from](http://ps.w.org/vms-plugin/assets/screenshot-1.png)
+#### 🏢 **General Manager**
 
-the /assets directory or the directory that contains the stable readme.txt (tags or trunk). Screenshots in the /assets
-directory take precedence. For example, `/assets/screenshot-1.png` would win over `/tags/4.3/screenshot-1.png`
-(or jpg, jpeg, gif).
-### 2. This is the second screen shot ###
-![This is the second screen shot](http://ps.w.org/vms-plugin/assets/screenshot-2.png)
+General Managers handle high-level administrative tasks and system configuration.
 
+**What General Managers Can Do:**
 
-## Changelog ##
+-   Register courtesy guests for the organization
+-   Access comprehensive system reports
+-   View and edit supplier information
+-   Manage accommodation guest records
+-   Access reciprocation member data
+-   View club-related information and analytics
 
-### 1.0 ###
-* A change since the previous version.
-* Another change.
+**General Manager Workflow:**
 
-### 0.5 ###
-* List versions from most recent at top to oldest at bottom.
+1. **Courtesy Guest Management**: Register guests who don't have specific hosts
+2. **System Monitoring**: Review reports on visitor patterns and system performance
+3. **Supplier & Partner Management**: Maintain supplier and accommodation provider records
+4. **Reciprocation Oversight**: Manage reciprocal club member access
 
-## Upgrade Notice ##
+#### 🚪 **Gate Staff**
 
-### 1.0 ###
-Upgrade notices describe the reason a user should upgrade.  No more than 300 characters.
+Gate staff handle physical access control and guest verification upon arrival.
 
-### 0.5 ###
-This version fixes a security related bug.  Upgrade immediately.
+**What Gate Staff Can Do:**
 
-## Arbitrary section ##
+-   Register accommodation guests arriving at the gate
+-   Register suppliers and delivery personnel
+-   Register reciprocation members from partner clubs
+-   **Cannot** register regular guests arriving at the gate (must be pre-registered)
+-   **Cannot** perform sign-in operations (handled by reception)
 
-You may provide arbitrary sections, in the same format as the ones above.  This may be of use for extremely complicated
-plugins where more information needs to be conveyed that doesn't fit into the categories of "description" or
-"installation."  Arbitrary sections will be shown below the built-in sections outlined above.
+**Gate Staff Workflow:**
 
-## A brief Markdown Example ##
+1. **Arrival Verification**: Check pre-registered guests against ID/passport
+2. **Accommodation Guests**: Register walk-in accommodation guests
+3. **Supplier Registration**: Register suppliers and service providers
+4. **Reciprocation Members**: Register members from reciprocal clubs
+5. **Access Control**: Manage physical entry based on registration status
 
-Ordered list:
+#### 🏨 **Reception Staff**
 
-1. Some feature
-1. Another feature
-1. Something else about the plugin
+Reception staff are the primary point of contact for visitor management and system administration.
 
-Unordered list:
+**What Reception Staff Can Do:**
 
-* something
-* something else
-* third thing
+-   Register guests on behalf of members
+-   View, edit, and update guest information
+-   Cancel visits on behalf of members
+-   View, edit, and update member information
+-   Manage supplier records
+-   Handle accommodation guest registrations
+-   Process reciprocation member visits
+-   Perform guest sign-in and sign-out operations
+-   Approve member registrations
 
-Here's a link to [WordPress](https://wordpress.org/ "Your favorite software") and one to [Markdown's Syntax Documentation][markdown syntax].
-Titles are optional, naturally.
+**Reception Staff Workflow:**
 
-[markdown syntax]: https://daringfireball.net/projects/markdown/syntax
-            "Markdown is what the parser uses to process much of the readme file"
+1. **Member Registration**: Process new member applications and approvals
+2. **Guest Registration**: Register guests for members who call ahead
+3. **Visit Management**: Handle visit cancellations, modifications, and status updates
+4. **Sign-in/Sign-out**: Process guest arrivals and departures with ID verification
+5. **System Maintenance**: Update member and guest information as needed
+6. **Supplier Management**: Maintain supplier contact information and access records
 
-Markdown uses email style notation for blockquotes and I've been told:
-> Asterisks for *emphasis*. Double it up  for **strong**.
+#### ⚙️ **Administrator**
 
-`<?php code(); // goes in backticks ?>`
+Administrators have complete system access and configuration control.
+
+**What Administrators Can Do:**
+
+-   All permissions from all other roles
+-   Edit system settings and configuration
+-   View audit logs (complete system activity history)
+-   Access SMS logs and delivery reports
+-   View email logs and delivery status
+-   Manage user roles and permissions
+-   Configure notification templates
+-   Access all reports and analytics
+-   Perform system maintenance tasks
+
+**Administrator Workflow:**
+
+1. **System Configuration**: Set up notification preferences, limits, and rules
+2. **User Management**: Create and manage user accounts and roles
+3. **Audit & Monitoring**: Review system logs for security and compliance
+4. **Report Analysis**: Access detailed analytics on system usage
+5. **Maintenance**: Perform system updates, backups, and troubleshooting
+
+## Installation
+
+### Minimum Requirements
+
+-   WordPress 6.0 or higher
+-   PHP 7.4 or higher
+-   MySQL 5.6 or higher
+-   HTTPS recommended for security
+
+### Installation Steps
+
+1. **Download and Install**
+
+    - Download the plugin zip file
+    - Upload to `/wp-content/plugins/` directory
+    - Activate through WordPress admin > Plugins
+
+2. **Database Setup**
+
+    - Plugin automatically creates required tables on activation
+    - Custom database tables: `wp_vms_guests`, `wp_vms_guest_visits`
+
+3. **Initial Configuration**
+
+    - Set up SMS gateway credentials in settings
+    - Configure email notification templates
+    - Set up user roles and permissions
+
+4. **User Setup**
+    - Create user accounts for different roles
+    - Assign appropriate capabilities
+    - Configure notification preferences per user
+
+## User Role Capabilities Matrix
+
+| Capability                     | Member | Chairman | Gen Manager | Reception | Gate | Admin |
+| ------------------------------ | ------ | -------- | ----------- | --------- | ---- | ----- |
+| Register Personal Guests       | ✅     | ✅       | ❌          | ✅        | ❌   | ✅    |
+| Register Courtesy Guests       | ❌     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| Register Accommodation Guests  | ❌     | ❌       | ❌          | ✅        | ✅   | ✅    |
+| Register Suppliers             | ❌     | ❌       | ❌          | ✅        | ✅   | ✅    |
+| Register Reciprocation Members | ❌     | ❌       | ❌          | ✅        | ✅   | ✅    |
+| Cancel Visits                  | ✅     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| Guest Sign-in/Sign-out         | ❌     | ❌       | ❌          | ✅        | ❌   | ✅    |
+| View Reports                   | ❌     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| Edit Member Data               | ❌     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| Edit Guest Data                | ❌     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| Edit Supplier Data             | ❌     | ✅       | ✅          | ✅        | ❌   | ✅    |
+| View Audit Logs                | ❌     | ❌       | ❌          | ❌        | ❌   | ✅    |
+| View SMS/Email Logs            | ❌     | ❌       | ❌          | ❌        | ❌   | ✅    |
+| System Settings                | ❌     | ❌       | ❌          | ❌        | ❌   | ✅    |
+
+## Visit Limits & Rules
+
+### Guest Visit Limits
+
+-   **Monthly Limit**: 4 visits per guest per month
+-   **Yearly Limit**: 24 visits per guest per year
+-   Limits are automatically enforced by the system
+-   Exceeded limits result in automatic suspension
+
+### Host Daily Limits
+
+-   **Daily Limit**: 4 guests per host per day
+-   Courtesy visits don't count toward host limits
+-   System automatically adjusts visit statuses based on host capacity
+
+### Status Management
+
+-   **Active**: Guest can make visit requests
+-   **Suspended**: Guest has exceeded limits, temporarily blocked
+-   **Banned**: Permanently blocked from system access
+
+## Frequently Asked Questions
+
+### For Members
+
+**How do I register a guest?**
+
+1. Log in to your member account
+2. Navigate to "Register Guest"
+3. Fill in guest details (name, phone, visit date)
+4. Submit for approval
+5. Receive confirmation via SMS/email
+
+**Why was my guest registration rejected?**
+Common reasons:
+
+-   Monthly limit exceeded (4 visits)
+-   Yearly limit exceeded (24 visits)
+-   Host daily limit reached (4 guests per day)
+-   Guest previously banned or suspended
+
+**How do I cancel a visit?**
+
+1. Go to "My Guests" section
+2. Find the upcoming visit
+3. Click "Cancel Visit"
+4. Guest receives cancellation notification
+
+### For Reception Staff
+
+**How do I approve a member registration?**
+
+1. Access pending member registrations
+2. Review application details
+3. Click "Approve" or "Reject"
+4. Member receives notification of decision
+
+**What happens during guest sign-in?**
+
+1. Guest arrives with ID/passport
+2. Verify guest details against registration
+3. Scan or enter ID number
+4. Click "Sign In" - timestamp recorded
+5. Guest and host receive confirmation
+
+### For Administrators
+
+**How do I view system logs?**
+
+1. Go to VMS Settings > Logs
+2. View Audit Logs for system activities
+3. Check SMS Logs for message delivery status
+4. Review Email Logs for notification status
+
+**How do I configure notifications?**
+
+1. Access VMS Settings > Notifications
+2. Set SMS gateway credentials
+3. Customize email templates
+4. Configure user notification preferences
+
+## Screenshots
+
+### 1. Member Dashboard
+
+![Member Dashboard](assets/screenshot-1.png)
+Overview of member's guest registrations and visit history.
+
+### 2. Reception Management Interface
+
+![Reception Interface](assets/screenshot-2.png)
+Complete guest and member management interface for reception staff.
+
+### 3. System Reports
+
+![System Reports](assets/screenshot-3.png)
+Comprehensive reporting dashboard for management oversight.
+
+## Changelog
+
+### 1.0.0
+
+-   Initial release with complete visitor management system
+-   Multi-role user system implementation
+-   Automated SMS and email notifications
+-   Comprehensive reporting and audit trails
+-   Visit limits and automatic status management
+
+### 0.5.0
+
+-   Beta release with core functionality
+-   Basic guest registration and tracking
+-   User role system implementation
+-   Initial notification system
+
+## Upgrade Notice
+
+### 1.0.0
+
+Major release with complete visitor management system. All previous data will be preserved during upgrade.
+
+### 0.5.0
+
+First beta release. Backup your database before upgrading.
+
+## Support
+
+For support and documentation, visit:
+
+-   [Plugin Documentation](https://github.com/wyllymk/vms-plugin/wiki)
+-   [User Guides by Role](https://yourdomain.com/vms-documentation/)
+-   [Support Forum](https://wordpress.org/support/plugin/vms-plugin)
+
+## Development
+
+This plugin is developed with:
+
+-   **WordPress Coding Standards**: PSR-4 autoloading
+-   **Composer**: Dependency management
+-   **PHPCS**: Code quality assurance
+-   **WordPress Roles API**: Custom role management
+
+## License
+
+This plugin is licensed under the GPLv2 or later.

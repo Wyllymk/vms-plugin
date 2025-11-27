@@ -76,6 +76,7 @@ class VMS_Database_Manager
             self::create_reciprocating_members_table();
             self::create_reciprocating_members_visits_table();
             self::create_sms_logs_table();
+            self::create_audit_table();
 
             $wpdb->query('COMMIT');
             error_log('[VMS] ✅ All tables created successfully');
@@ -109,6 +110,7 @@ class VMS_Database_Manager
             VMS_Config::GUEST_VISITS_TABLE,
             VMS_Config::GUESTS_TABLE,
             VMS_Config::SMS_LOGS_TABLE,
+            VMS_Config::AUDIT_LOGS,
         ];
 
         foreach ($tables as $slug) {
@@ -456,6 +458,41 @@ class VMS_Database_Manager
             KEY message_id (message_id),
             KEY status (status)
         ");
+    }
+
+    /**
+     * Create audit trail database table
+     *
+     * Stores all audit trails.
+     *
+     * @since 1.0.0
+     * @return void
+     */    
+    private static function create_audit_table(): void
+    {
+        self::create_table(VMS_Config::AUDIT_LOGS, "
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            user_id bigint(20) unsigned DEFAULT NULL COMMENT 'WordPress user ID who performed the action',
+            user_role varchar(50) DEFAULT NULL COMMENT 'Role of the user who performed the action',
+            action_type varchar(100) NOT NULL COMMENT 'Type of action performed',
+            action_category varchar(50) NOT NULL COMMENT 'Category: login, guest, employee, visit, etc.',
+            entity_type varchar(50) DEFAULT NULL COMMENT 'Type of entity affected: guest, employee, visit, etc.',
+            entity_id bigint(20) unsigned DEFAULT NULL COMMENT 'ID of the affected entity',
+            old_values longtext DEFAULT NULL COMMENT 'Previous values (JSON)',
+            new_values longtext DEFAULT NULL COMMENT 'New values (JSON)',
+            metadata longtext DEFAULT NULL COMMENT 'Additional context data (JSON)',
+            ip_address varchar(45) DEFAULT NULL COMMENT 'IP address of the user',
+            user_agent text DEFAULT NULL COMMENT 'User agent string',
+            created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_user_id (user_id),
+            KEY idx_action_type (action_type),
+            KEY idx_action_category (action_category),
+            KEY idx_entity_type (entity_type),
+            KEY idx_entity_id (entity_id),
+            KEY idx_created_at (created_at)
+        ");       
+       
     }
 
     /* ===============================================================
