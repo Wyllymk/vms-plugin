@@ -544,7 +544,7 @@ class VMS_Admin extends Base
     </div>
 
     <!-- Logs Table -->
-    <table class="wp-list-table widefat fixed striped sms-logs-table">
+    <table class="fixed wp-list-table widefat striped sms-logs-table">
         <thead>
             <tr>
                 <th class="column-number"><?php esc_html_e('#', 'vms-plugin'); ?></th>
@@ -789,12 +789,12 @@ class VMS_Admin extends Base
         color: #2e7d32;
     }
 
-    .role-chairman {
+    .role-chairman, .role-general_manager {
         background: #fff3e0;
         color: #ef6c00;
     }
 
-    .role-admin {
+    .role-admin, .role-employee {
         background: #fce4ec;
         color: #c2185b;
     }
@@ -1346,7 +1346,7 @@ class VMS_Admin extends Base
     </div>
 
     <!-- Logs Table -->
-    <table class="wp-list-table widefat fixed striped audit-logs-table">
+    <table class="fixed wp-list-table widefat striped audit-logs-table">
         <thead>
             <tr>
                 <th class="column-id"><?php esc_html_e('ID', 'vms-plugin'); ?></th>

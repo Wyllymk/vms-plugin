@@ -360,6 +360,7 @@ class VMS_Clubs extends Base
                 'club_email' => $club->club_email,
                 'club_phone' => $club->club_phone,
                 'club_website' => $club->club_website,
+                'is_reciprocating' => $club->is_reciprocating,
                 'status' => $club->status,
                 'notes' => $club->notes,
                 'created_at' => $club->created_at,

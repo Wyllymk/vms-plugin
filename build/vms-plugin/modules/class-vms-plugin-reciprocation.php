@@ -79,6 +79,7 @@ class VMS_Reciprocation extends Base
         $phone_number         = sanitize_text_field($_POST['phone_number'] ?? '');
         $id_number            = sanitize_text_field($_POST['id_number'] ?? '');
         $reciprocating_member_number = sanitize_text_field($_POST['reciprocating_member_number'] ?? '');
+        $reciprocating_club_id = intval($_POST['reciprocating_club_id'] ?? 0); // NEW: Get club ID
         $member_status        = sanitize_text_field($_POST['member_status'] ?? 'active');
         $receive_messages     = isset($_POST['receive_messages']) ? 'yes' : 'no';
         $receive_emails       = isset($_POST['receive_emails']) ? 'yes' : 'no';
@@ -87,10 +88,11 @@ class VMS_Reciprocation extends Base
         if (empty($member_id)) $errors[] = 'Member ID is required';
         if (empty($first_name)) $errors[] = 'First name is required';
         if (empty($last_name)) $errors[] = 'Last name is required';
-        if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
+        // if (empty($email) || !is_email($email)) $errors[] = 'Valid email is required';
         if (empty($phone_number)) $errors[] = 'Phone number is required';
         if (empty($id_number)) $errors[] = 'ID number is required';
         if (empty($reciprocating_member_number)) $errors[] = 'Member number is required';
+        if ($reciprocating_club_id <= 0) $errors[] = 'Please select a valid club'; // NEW: Club validation
 
         // Validate status
         $valid_statuses = ['active', 'suspended', 'banned'];
@@ -105,6 +107,18 @@ class VMS_Reciprocation extends Base
 
         global $wpdb;
         $members_table = VMS_Config::get_table_name(VMS_Config::RECIP_MEMBERS_TABLE);
+        $clubs_table = VMS_Config::get_table_name(VMS_Config::RECIP_CLUBS_TABLE);
+
+        // Check if club exists and is active
+        $club_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$clubs_table} WHERE id = %d AND status = 'active'",
+            $reciprocating_club_id
+        ));
+        
+        if (!$club_exists) {
+            wp_send_json_error(['messages' => ['Selected club is not available or inactive']]);
+            return;
+        }
 
         // Fetch existing member before update
         $member = $wpdb->get_row($wpdb->prepare(
@@ -164,13 +178,14 @@ class VMS_Reciprocation extends Base
                 'phone_number'                => $phone_number,
                 'id_number'                   => $id_number,
                 'reciprocating_member_number' => $reciprocating_member_number,
+                'reciprocating_club_id'       => $reciprocating_club_id, // NEW: Add club ID
                 'member_status'               => $new_status,
                 'receive_messages'            => $receive_messages,
                 'receive_emails'              => $receive_emails,
                 'updated_at'                  => current_time('mysql')
             ],
             ['id' => $member_id],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s'], // Updated type array
             ['%d']
         );
 
@@ -178,6 +193,9 @@ class VMS_Reciprocation extends Base
             wp_send_json_error(['messages' => ['Failed to update member record']]);
             return;
         }
+
+        // Clear the clubs cache since we might have changed a club association
+        delete_transient('vms_reciprocating_clubs_cache');
 
         // Build member data array
         $member_data = [
@@ -788,6 +806,7 @@ class VMS_Reciprocation extends Base
         $visit_purpose = sanitize_text_field($_POST['visit_purpose'] ?? '');
 
         if (!$member_id) $errors[] = 'Invalid member ID';
+        if (empty($member_number)) $errors[] = 'Member number is required';
         if (!in_array($visit_purpose, ['golf_tournament', 'casual_visit'])) {
             $errors[] = 'Invalid visit purpose';
         }
@@ -826,60 +845,58 @@ class VMS_Reciprocation extends Base
         $updates = [];
         $formats = [];
 
-        // Handle club
-        if (!$member->reciprocating_club_id) {
-            if (!$club_id) {
-                error_log("Missing club ID for member {$member_id}");
-                wp_send_json_error(['messages' => ['Reciprocating club is required']]);
-                return;
-            }
-            $updates['reciprocating_club_id'] = $club_id;
-            $formats[] = '%d';
-            $member->reciprocating_club_id = $club_id;
-            error_log("Club ID set to {$club_id} for member {$member_id}");
+        // Always allow club to be set/changed
+        if (!$club_id) {
+            error_log("Missing club ID for member {$member_id}");
+            wp_send_json_error(['messages' => ['Reciprocating club is required']]);
+            return;
+        }
+        
+        // Update club (even if it already exists, allow change)
+        $updates['reciprocating_club_id'] = $club_id;
+        $formats[] = '%d';
+        $member->reciprocating_club_id = $club_id;
+        error_log("Club ID set to {$club_id} for member {$member_id}");
+
+        // Always allow member number to be set/changed (but check for duplicates)
+        if (empty($member_number)) {
+            error_log("Missing member number for member {$member_id}");
+            wp_send_json_error(['messages' => ['Member number is required']]);
+            return;
         }
 
-        // Handle member number
-        if (empty($member->reciprocating_member_number)) {
-            if (empty($member_number)) {
-                error_log("Missing member number for member {$member_id}");
-                wp_send_json_error(['messages' => ['Member number is required']]);
-                return;
-            }
+        // Check if member number is already used by ANOTHER member
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $members_table WHERE reciprocating_member_number = %s AND id != %d",
+            $member_number, $member_id
+        ));
+        error_log("Checking if member number {$member_number} exists for other members: {$exists}");
 
-            $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $members_table WHERE reciprocating_member_number = %s",
-                $member_number
-            ));
-            error_log("Checking if member number {$member_number} exists: {$exists}");
-
-            if ($exists) {
-                error_log("Duplicate member number {$member_number}");
-                wp_send_json_error(['messages' => ['This member number already exists']]);
-                return;
-            }
-
-            $updates['reciprocating_member_number'] = $member_number;
-            $formats[] = '%s';
-            $member->reciprocating_member_number = $member_number;
-            error_log("Member number set to {$member_number} for member {$member_id}");
-        } else {
-            if ($member->reciprocating_member_number != $member_number) {
-                error_log("Invalid member number: expected {$member->reciprocating_member_number}, got {$member_number}");
-                wp_send_json_error(['messages' => ['Invalid member number']]);
-                return;
-            }
+        if ($exists) {
+            error_log("Duplicate member number {$member_number} used by another member");
+            wp_send_json_error(['messages' => ['This member number is already in use by another member']]);
+            return;
         }
+
+        $updates['reciprocating_member_number'] = $member_number;
+        $formats[] = '%s';
+        $member->reciprocating_member_number = $member_number;
+        error_log("Member number set/changed to {$member_number} for member {$member_id}");
 
         // Execute single update if needed
         if (!empty($updates)) {
-            $wpdb->update(
+            $result = $wpdb->update(
                 $members_table,
                 $updates,
                 ['id' => $member_id],
                 $formats,
                 ['%d']
             );
+            if ($result === false) {
+                error_log("Failed to update member {$member_id} in DB");
+                wp_send_json_error(['messages' => ['Failed to update member details']]);
+                return;
+            }
             error_log("Member {$member_id} updated in DB with: " . json_encode($updates));
         }        
 
@@ -928,7 +945,7 @@ class VMS_Reciprocation extends Base
         // --- Fetch Club Name ---------------------------------------------------------
         $club_name = $wpdb->get_var($wpdb->prepare(
             "SELECT club_name FROM $clubs_table WHERE id = %d",
-            $member->reciprocating_club_id
+            $club_id
         ));
 
         error_log("Fetched club name: " . ($club_name ?: 'Unknown Club'));
@@ -973,9 +990,9 @@ class VMS_Reciprocation extends Base
                 'visit_purpose'               => $visit_purpose,
                 'status'                      => 'approved',
                 'member_status'               => $member->member_status,
-                'club_id'                     => $member->reciprocating_club_id,
+                'club_id'                     => $club_id,
                 'club_name'                   => $club_name ?: 'Unknown Club',
-                'reciprocating_member_number' => $member->reciprocating_member_number,
+                'reciprocating_member_number' => $member_number,
                 'sign_in_time'                => current_time('mysql')
             ]
         ]);
