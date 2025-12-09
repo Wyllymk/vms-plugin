@@ -267,6 +267,66 @@ class VMS_Audit_Trail extends Base
     }
 
     /**
+     * Log guest registration
+     */
+    public function log_guest_registration(): void
+    {
+        if (!isset($_POST['first_name'], $_POST['last_name'])) {
+            error_log('[VMS Audit Trail] Guest registration logging skipped: Missing required fields');
+            return;
+        }
+
+        global $wpdb;
+        $phone_number = sanitize_text_field($_POST['phone_number'] ?? '');
+        $guests_table = VMS_Config::get_table_name(VMS_Config::GUESTS_TABLE);
+
+        // Check if this is new or existing guest
+        $existing_guest = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, guest_status FROM {$guests_table} WHERE phone_number = %s",
+            $phone_number
+        ));
+
+        $registration_type = $existing_guest ? 'existing_guest_updated' : 'new_guest';
+        $guest_id = $existing_guest ? $existing_guest->id : null;
+
+        error_log("[VMS Audit Trail] Logging guest registration: type={$registration_type}, guest_id=" . ($guest_id ?? 'pending'));
+
+        $new_values = [
+            'first_name' => sanitize_text_field($_POST['first_name']),
+            'last_name' => sanitize_text_field($_POST['last_name']),
+            'phone_number' => $phone_number,
+            'receive_emails' => 'yes',
+            'receive_messages' => 'yes'
+        ];
+
+        $old_values = null;
+        if ($existing_guest) {
+            $old_values = [
+                'guest_status' => $existing_guest->guest_status
+            ];
+        }
+
+        $metadata = [
+            'registration_type' => $registration_type,
+            'host_member_id' => absint($_POST['host_member_id'] ?? 0),
+            'visit_date' => sanitize_text_field($_POST['visit_date'] ?? ''),
+            'is_existing_guest' => $existing_guest ? true : false
+        ];
+
+        $this->log_action([
+            'action_type' => 'guest_registration',
+            'action_category' => 'guest',
+            'entity_type' => 'guest',
+            'entity_id' => $guest_id,
+            'old_values' => $old_values,
+            'new_values' => $new_values,
+            'metadata' => $metadata
+        ]);
+
+        error_log("[VMS Audit Trail] Guest registration logged successfully: {$new_values['first_name']} {$new_values['last_name']}");
+    }
+
+    /**
      * Log courtesy guest registration
      */
     public function log_courtesy_guest_registration(): void
@@ -1397,7 +1457,7 @@ class VMS_Audit_Trail extends Base
         </div>
 
         <div class="audit-trail-table-container">
-            <table class="wp-list-table widefat fixed striped" id="audit-trail-table">
+            <table class="fixed wp-list-table widefat striped" id="audit-trail-table">
                 <thead>
                     <tr>
                         <th><?php _e('Date/Time', 'vms-plugin'); ?></th>
@@ -1639,7 +1699,7 @@ jQuery(document).ready(function($) {
      *
      * @param int $days_to_keep Number of days to keep logs
      */
-    public static function cleanup_old_logs(int $days_to_keep = 90): void
+    public static function cleanup_old_logs(int $days_to_keep = 365): void
     {
         global $wpdb;
 

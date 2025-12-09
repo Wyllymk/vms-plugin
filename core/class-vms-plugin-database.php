@@ -344,13 +344,15 @@ class VMS_Database_Manager
             club_email VARCHAR(255) DEFAULT NULL,
             club_phone VARCHAR(20) DEFAULT NULL,
             club_website VARCHAR(255) DEFAULT NULL,
+            is_reciprocating ENUM('yes','no') DEFAULT 'no',
             status ENUM('active','suspended','banned') DEFAULT 'active',
             notes TEXT DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY club_name (club_name),
-            KEY status (status)
+            KEY status (status),
+            KEY is_reciprocating (is_reciprocating)
         ");
     }
 

@@ -65,16 +65,16 @@ class VMS_Clubs extends Base
 
         error_log('[VMS] [Club Registration] AJAX request received.');
 
-        $club_name    = sanitize_text_field($_POST['club_name'] ?? '');
-        $club_email   = sanitize_email($_POST['club_email'] ?? '');
-        $club_phone   = sanitize_text_field($_POST['club_phone'] ?? '');
-        $club_website = esc_url_raw($_POST['club_website'] ?? '');        
-        $notes        = sanitize_textarea_field($_POST['notes'] ?? '');
-        $status       = sanitize_text_field($_POST['status'] ?? 'active');
+        $club_name         = sanitize_text_field($_POST['club_name'] ?? '');
+        $club_email        = sanitize_email($_POST['club_email'] ?? '');
+        $club_phone        = sanitize_text_field($_POST['club_phone'] ?? '');
+        $club_website      = esc_url_raw($_POST['club_website'] ?? '');
+        $is_reciprocating  = isset($_POST['is_reciprocating']) && $_POST['is_reciprocating'] === 'yes' ? 'yes' : 'no';
+        $notes             = sanitize_textarea_field($_POST['notes'] ?? '');
+        $status            = sanitize_text_field($_POST['status'] ?? 'active');
 
         $errors = [];
 
-        // --- Validation ---
         if (empty($club_name)) $errors[] = 'Club name is required.';
         if (strlen($club_name) > 255) $errors[] = 'Club name must be less than 255 characters.';
         if (!empty($club_email) && !is_email($club_email)) $errors[] = 'Invalid email address.';
@@ -98,15 +98,15 @@ class VMS_Clubs extends Base
             wp_send_json_error(['messages' => $errors]);
         }
 
-        // --- Insert Data ---
         $club_data = [
-            'club_name'   => $club_name,
-            'club_email'  => $club_email,
-            'club_phone'  => $club_phone,
-            'club_website'=> $club_website,
-            'notes'       => $notes,
-            'status'      => in_array($status, ['active','suspended','banned']) ? $status : 'active',
-            'created_at'  => current_time('mysql'),
+            'club_name'        => $club_name,
+            'club_email'       => $club_email,
+            'club_phone'       => $club_phone,
+            'club_website'     => $club_website,
+            'is_reciprocating' => $is_reciprocating,
+            'notes'            => $notes,
+            'status'           => in_array($status, ['active','suspended','banned']) ? $status : 'active',
+            'created_at'       => current_time('mysql'),
         ];
 
         error_log("[VMS] [Club Registration] Inserting new club: {$club_name}");
@@ -114,7 +114,7 @@ class VMS_Clubs extends Base
         $result = $wpdb->insert(
             $clubs_table,
             $club_data,
-            ['%s','%s','%s','%s','%s','%s','%s']
+            ['%s','%s','%s','%s','%s','%s','%s','%s']
         );
 
         if ($result === false) {
@@ -126,16 +126,14 @@ class VMS_Clubs extends Base
         error_log("[VMS] [Club Registration] Insert successful. New club ID: {$club_id}");
         
         $new_club = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, club_name, status, created_at, updated_at FROM {$clubs_table} WHERE id = %d",
+            "SELECT id, club_name, is_reciprocating, status, created_at, updated_at FROM {$clubs_table} WHERE id = %d",
             $club_id
         ));
-
 
         if (!$new_club) {
             error_log("[VMS] [Club Registration] Failed to fetch new club record for ID: {$club_id}");
         }
 
-        // --- Update transient cache ---
         $transient_key = 'vms_reciprocating_clubs_cache';
         $cached_clubs = get_transient($transient_key);
 
@@ -144,6 +142,7 @@ class VMS_Clubs extends Base
             $cached_clubs[] = [
                 'id' => $new_club->id,
                 'club_name' => $new_club->club_name,
+                'is_reciprocating' => $new_club->is_reciprocating,
             ];
             $cache_saved = set_transient($transient_key, $cached_clubs, MONTH_IN_SECONDS);
             if ($cache_saved) {
@@ -152,7 +151,7 @@ class VMS_Clubs extends Base
                 error_log('[VMS] [Club Registration] Failed to update transient cache.');
             }
         } else {
-            error_log('[VMS] [Club Registration] No existing cache found — refreshing full cache.');
+            error_log('[VMS] [Club Registration] No existing cache found - refreshing full cache.');
             self::refresh_reciprocating_clubs_cache();
         }
 
@@ -171,13 +170,14 @@ class VMS_Clubs extends Base
         self::verify_ajax_request();
         global $wpdb;
 
-        $club_id     = intval($_POST['club_id'] ?? 0);
-        $club_name   = sanitize_text_field($_POST['club_name'] ?? '');
-        $club_email  = sanitize_email($_POST['club_email'] ?? '');
-        $club_phone  = sanitize_text_field($_POST['club_phone'] ?? '');
-        $club_website= esc_url_raw($_POST['club_website'] ?? '');
-        $club_status = sanitize_text_field($_POST['club_status'] ?? 'active');
-        $notes       = sanitize_textarea_field($_POST['notes'] ?? '');
+        $club_id          = intval($_POST['club_id'] ?? 0);
+        $club_name        = sanitize_text_field($_POST['club_name'] ?? '');
+        $club_email       = sanitize_email($_POST['club_email'] ?? '');
+        $club_phone       = sanitize_text_field($_POST['club_phone'] ?? '');
+        $club_website     = esc_url_raw($_POST['club_website'] ?? '');
+        $is_reciprocating = isset($_POST['is_reciprocating']) && $_POST['is_reciprocating'] === 'yes' ? 'yes' : 'no';
+        $club_status      = sanitize_text_field($_POST['club_status'] ?? 'active');
+        $notes            = sanitize_textarea_field($_POST['notes'] ?? '');
 
         $errors = [];
         if ($club_id <= 0) $errors[] = 'Invalid club ID.';
@@ -208,16 +208,17 @@ class VMS_Clubs extends Base
         $result = $wpdb->update(
             $clubs_table,
             [
-                'club_name'   => $club_name,
-                'club_email'  => $club_email,
-                'club_phone'  => $club_phone,
-                'club_website'=> $club_website,
-                'status'      => $club_status,
-                'notes'       => $notes,
-                'updated_at'  => current_time('mysql')
+                'club_name'        => $club_name,
+                'club_email'       => $club_email,
+                'club_phone'       => $club_phone,
+                'club_website'     => $club_website,
+                'is_reciprocating' => $is_reciprocating,
+                'status'           => $club_status,
+                'notes'            => $notes,
+                'updated_at'       => current_time('mysql')
             ],
             ['id' => $club_id],
-            ['%s','%s','%s','%s','%s','%s','%s'],
+            ['%s','%s','%s','%s','%s','%s','%s','%s'],
             ['%d']
         );
 
@@ -225,7 +226,6 @@ class VMS_Clubs extends Base
             wp_send_json_error(['messages' => ['Failed to update club. Please try again.']]);
         }
 
-        // 🔄 Refresh transient cache to ensure accuracy
         self::refresh_reciprocating_clubs_cache();
 
         $updated_club = $wpdb->get_row($wpdb->prepare(
