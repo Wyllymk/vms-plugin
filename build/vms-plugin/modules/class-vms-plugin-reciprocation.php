@@ -743,11 +743,10 @@ class VMS_Reciprocation extends Base
             return;
         }
 
-        $site_name = get_bloginfo('name');
         $club_name = !empty($club->club_name) ? $club->club_name : '';
         $formatted_date = date('M j', strtotime($visit_date));
 
-        $sms_message = "{$site_name}: Hello {$first_name}, ";
+        $sms_message = "Hello {$first_name}, ";
         $sms_message .= "reciprocating membership registered. ";
 
         if (!empty($reciprocating_member_number)) {
@@ -1151,10 +1150,9 @@ class VMS_Reciprocation extends Base
         }
 
         try {
-            $site_name = get_bloginfo('name');
             $sign_in_time = date('g:i A', strtotime(current_time('mysql')));
 
-            $sms_message = "{$site_name}: Hello {$visit->first_name}, ";
+            $sms_message = "Hello {$visit->first_name}, ";
             $sms_message .= "you have signed in successfully at {$sign_in_time}. ";
             $sms_message .= "Enjoy your visit!";
 
@@ -1206,10 +1204,9 @@ class VMS_Reciprocation extends Base
         }
 
         try {
-            $site_name = get_bloginfo('name');
             $sign_out_time = date('g:i A', strtotime(current_time('mysql')));
 
-            $sms_message = "{$site_name}: Hello {$visit->first_name}, ";
+            $sms_message = "Hello {$visit->first_name}, ";
             $sms_message .= "you have signed out at {$sign_out_time}. ";
             $sms_message .= "Thank you for visiting!";
 
@@ -1457,24 +1454,24 @@ class VMS_Reciprocation extends Base
         }
 
         // Send SMS to admin/management
-        $admin_users = get_users(['role' => 'administrator']);
-        foreach ($admin_users as $admin) {
-            $admin_receive_messages = get_user_meta($admin->ID, 'receive_messages', true);
-            $admin_phone = get_user_meta($admin->ID, 'phone_number', true);
-            $admin_first_name = get_user_meta($admin->ID, 'first_name', true);
+        // $admin_users = get_users(['role' => 'administrator']);
+        // foreach ($admin_users as $admin) {
+        //     $admin_receive_messages = get_user_meta($admin->ID, 'receive_messages', true);
+        //     $admin_phone = get_user_meta($admin->ID, 'phone_number', true);
+        //     $admin_first_name = get_user_meta($admin->ID, 'first_name', true);
 
-            if ($admin_receive_messages === 'yes' && !empty($admin_phone)) {
-                $admin_message = "Dear " . $admin_first_name . ",\nReciprocating member $first_name $last_name has registered for $formatted_date. Status: $status_text.";
+        //     if ($admin_receive_messages === 'yes' && !empty($admin_phone)) {
+        //         $admin_message = "Dear " . $admin_first_name . ",\nReciprocating member $first_name $last_name has registered for $formatted_date. Status: $status_text.";
                 
-                if ($status !== 'approved') {
-                    $admin_message .= " Requires approval due to limits.";
-                }
+        //         if ($status !== 'approved') {
+        //             $admin_message .= " Requires approval due to limits.";
+        //         }
 
-                error_log("Sending SMS to admin ID {$admin->ID} at $admin_phone: $admin_message");
+        //         error_log("Sending SMS to admin ID {$admin->ID} at $admin_phone: $admin_message");
 
-                VMS_SMS::send_sms($admin_phone, $admin_message, $admin->ID, 'administrator');
-            }
-        }
+        //         VMS_SMS::send_sms($admin_phone, $admin_message, $admin->ID, 'administrator');
+        //     }
+        // }
     }
 
     /**

@@ -636,7 +636,7 @@ class VMS_Employee extends Base
             $login_url = home_url('/login');
 
             // ✅ Step 2: Build SMS message (short and compliant)
-            $sms_message  = "{$site_name}: Hello {$first_name}, ";
+            $sms_message  = "Hello {$first_name}, ";
             $sms_message .= "your employee account is ready. ";
             $sms_message .= "Username: {$user_login}, ";
             $sms_message .= "Password: {$password}. ";

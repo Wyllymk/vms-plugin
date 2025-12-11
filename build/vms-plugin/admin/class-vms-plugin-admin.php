@@ -1528,7 +1528,6 @@ class VMS_Admin extends Base
     background: #e3f2fd;
     color: #1565c0;
 }
-
 .category-badge {
     padding: 3px 6px;
     border-radius: 3px;
@@ -1538,6 +1537,7 @@ class VMS_Admin extends Base
     display: inline-block;
 }
 
+/* Original categories */
 .category-authentication {
     background: #e8f5e8;
     color: #2e7d32;
@@ -1561,6 +1561,108 @@ class VMS_Admin extends Base
 .category-status {
     background: #e0f2f1;
     color: #00695c;
+}
+
+/* New categories */
+
+.category-reciprocating_member {
+    background: #e1f5fe;
+    color: #0277bd;
+}
+
+.category-supplier {
+    background: #fff8e1;
+    color: #ff8f00;
+}
+
+.category-supplier_visit {
+    background: #f1f8e9;
+    color: #558b2f;
+}
+
+.category-accommodation_guest {
+    background: #f3e5f5;
+    color: #6a1b9a;
+}
+
+.category-accommodation_visit {
+    background: #e8eaf6;
+    color: #3949ab;
+}
+
+.category-contractor {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.category-vendor {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.category-interview {
+    background: #e0f7fa;
+    color: #00838f;
+}
+
+.category-maintenance {
+    background: #fce4ec;
+    color: #ad1457;
+}
+
+.category-delivery {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.category-meeting {
+    background: #fff3e0;
+    color: #f57c00;
+}
+
+.category-training {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.category-emergency {
+    background: #ffebee;
+    color: #d32f2f;
+}
+
+.category-temporary {
+    background: #f3e5f5;
+    color: #8e24aa;
+}
+
+.category-security {
+    background: #e0f2f1;
+    color: #00796b;
+}
+
+.category-official_visit {
+    background: #e8eaf6;
+    color: #303f9f;
+}
+
+.category-inspection {
+    background: #fffde7;
+    color: #f9a825;
+}
+
+.category-audit {
+    background: #f1f8e9;
+    color: #689f38;
+}
+
+.category-client {
+    background: #fce4ec;
+    color: #c2185b;
+}
+
+.category-partner {
+    background: #e8f5e9;
+    color: #388e3c;
 }
 
 .changes-preview {
