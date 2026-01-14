@@ -639,6 +639,23 @@ class VMS_Reciprocation extends Base
 
         error_log("[VMS] Visit created successfully for member ID=$member_id");
 
+        // Log visit creation
+        VMS_Audit_Trail::get_instance()->log_action([
+            'action_type' => 'reciprocating_member_visit_registration',
+            'action_category' => 'reciprocating_member_visit',
+            'entity_type' => 'reciprocating_member_visit',
+            'entity_id' => $visit_id,
+            'new_values' => [
+                'member_id' => $member_id,
+                'visit_date' => $visit_date,
+                'status' => $preliminary_status
+            ],
+            'metadata' => [
+                'registration_type' => 'initial_reciprocating_member_registration'
+            ]
+        ]);
+        error_log("Reciprocating member visit creation logged for member ID: $member_id, visit ID: $visit_id");
+
         // === Update cached visit counts ===
         $visit_counts['yearly']++;
         set_transient($visit_count_key, $visit_counts, MONTH_IN_SECONDS);
@@ -940,6 +957,21 @@ class VMS_Reciprocation extends Base
         }
 
         error_log("Sign-in time updated successfully for visit ID {$visit->id}");
+
+        // Log reciprocating member sign-in
+        VMS_Audit_Trail::get_instance()->log_action([
+            'action_type' => 'reciprocating_member_sign_in',
+            'action_category' => 'reciprocating_member_visit',
+            'entity_type' => 'reciprocating_member_visit',
+            'entity_id' => $visit->id,
+            'metadata' => [
+                'id_number_used' => $member_number,
+                'sign_in_time' => current_time('mysql'),
+                'visit_purpose' => $visit_purpose,
+                'club_id' => $club_id
+            ]
+        ]);
+        error_log("Reciprocating member sign-in logged for member ID: $member_id, visit ID: {$visit->id}");
 
         // --- Fetch Club Name ---------------------------------------------------------
         $club_name = $wpdb->get_var($wpdb->prepare(

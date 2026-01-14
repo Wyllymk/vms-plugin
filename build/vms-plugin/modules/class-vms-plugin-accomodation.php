@@ -198,6 +198,20 @@ class VMS_Accommodation extends Base
 
             error_log("[Guest Sign-In] Guest sign-in recorded successfully for guest_id={$visit->guest_id}");
 
+            // Log accommodation guest sign-in
+            VMS_Audit_Trail::get_instance()->log_action([
+                'action_type' => 'accommodation_guest_sign_in',
+                'action_category' => 'accommodation_visit',
+                'entity_type' => 'accommodation_visit',
+                'entity_id' => $visit_id,
+                'metadata' => [
+                    'id_number_used' => $id_number,
+                    'sign_in_time' => $signin_time,
+                    'guest_status' => $visit->guest_status
+                ]
+            ]);
+            error_log("Accommodation guest sign-in logged for guest ID: {$visit->guest_id}, visit ID: {$visit_id}");
+
             // -------------------------------------------------------------
             // 8. Send notifications (wrapped safely)
             // -------------------------------------------------------------
@@ -725,6 +739,23 @@ class VMS_Accommodation extends Base
 
             $visit_id = $wpdb->insert_id;
             error_log("[Accommodation Guest Registration] Visit record created successfully with ID: {$visit_id}");
+
+            // Log visit creation
+            VMS_Audit_Trail::get_instance()->log_action([
+                'action_type' => 'accommodation_visit_registration',
+                'action_category' => 'accommodation_visit',
+                'entity_type' => 'accommodation_visit',
+                'entity_id' => $visit_id,
+                'new_values' => [
+                    'guest_id' => $guest_id,
+                    'visit_date' => $visit_date,
+                    'status' => $preliminary_status
+                ],
+                'metadata' => [
+                    'registration_type' => 'initial_accommodation_guest_registration'
+                ]
+            ]);
+            error_log("Accommodation visit creation logged for guest ID: $guest_id, visit ID: $visit_id");
 
             // -------------------------------------------------------------
             // Step 7: Send SMS notification (non-blocking)

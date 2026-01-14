@@ -595,7 +595,7 @@ class VMS_Audit_Trail extends Base
      *
      * @param array $data Action data
      */
-    private function log_action(array $data): void
+    public function log_action(array $data): void
     {
         global $wpdb;
 

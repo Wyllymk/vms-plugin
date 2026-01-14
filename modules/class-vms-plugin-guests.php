@@ -1524,8 +1524,27 @@ class VMS_Guest extends Base
         }
 
         $visit_id = $wpdb->insert_id;
-        error_log("Visit record created successfully with ID: $visit_id"); 
-        error_log("Preparing JSON response with guest ID $guest_id and visit ID $visit_id");       
+        error_log("Visit record created successfully with ID: $visit_id");
+
+        // Log visit creation
+        VMS_Audit_Trail::get_instance()->log_action([
+            'action_type' => 'visit_registration',
+            'action_category' => 'visit',
+            'entity_type' => 'visit',
+            'entity_id' => $visit_id,
+            'new_values' => [
+                'guest_id' => $guest_id,
+                'host_member_id' => $host_member_id,
+                'visit_date' => $visit_date,
+                'status' => $preliminary_status
+            ],
+            'metadata' => [
+                'registration_type' => 'initial_guest_registration'
+            ]
+        ]);
+        error_log("Visit creation logged for guest ID: $guest_id, visit ID: $visit_id");
+
+        error_log("Preparing JSON response with guest ID $guest_id and visit ID $visit_id");
 
         // Fetch final guest status
         $final_guest_data = $wpdb->get_row($wpdb->prepare(
