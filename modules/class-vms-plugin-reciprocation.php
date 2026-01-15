@@ -251,15 +251,15 @@ class VMS_Reciprocation extends Base
         }
 
         // Check if member has any visits
-        $visit_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $visits_table WHERE member_id = %d",
-            $member_id
-        ));
+        // $visit_count = $wpdb->get_var($wpdb->prepare(
+        //     "SELECT COUNT(*) FROM $visits_table WHERE member_id = %d",
+        //     $member_id
+        // ));
 
-        if ($visit_count > 0) {
-            wp_send_json_error(['messages' => ['Cannot delete member with existing visit records. Please archive the member instead.']]);
-            return;
-        }
+        // if ($visit_count > 0) {
+        //     wp_send_json_error(['messages' => ['Cannot delete member with existing visit records. Please archive the member instead.']]);
+        //     return;
+        // }
 
         // Delete the member
         $result = $wpdb->delete(
