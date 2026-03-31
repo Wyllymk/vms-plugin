@@ -164,9 +164,15 @@ class VMS_Reciprocation extends Base
         }
 
         // Check if email is already used by another member
-        $email_exists = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $members_table WHERE email = %s AND id != %d",
-            $email, $member_id
+       $email_exists = $wpdb->get_row($wpdb->prepare(
+            "SELECT id 
+            FROM $members_table 
+            WHERE email = %s 
+            AND email IS NOT NULL 
+            AND email != '' 
+            AND id != %d",
+            $email, 
+            $member_id
         ));
 
         if ($email_exists) {
