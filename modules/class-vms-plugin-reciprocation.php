@@ -148,8 +148,14 @@ class VMS_Reciprocation extends Base
 
         // Check if member number is already used by another member
         $member_number_exists = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $members_table WHERE reciprocating_member_number = %s AND id != %d",
-            $reciprocating_member_number, $member_id
+            "SELECT id 
+            FROM $members_table 
+            WHERE reciprocating_member_number = %s 
+            AND reciprocating_member_number IS NOT NULL 
+            AND reciprocating_member_number != '' 
+            AND id != %d",
+            $reciprocating_member_number, 
+            $member_id
         ));
 
         if ($member_number_exists) {
