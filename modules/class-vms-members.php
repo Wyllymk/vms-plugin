@@ -643,7 +643,8 @@ final class VMS_Members extends Singleton {
 						'paged'   => max( 1, $page ),
 						'orderby' => 'display_name',
 						'order'   => 'ASC',
-						'role__in' => array( 'member' ),
+						// Include both member and chairman roles
+						'role__in' => array( 'member', 'chairman' ),
 					);
 
 				if ( $search ) {

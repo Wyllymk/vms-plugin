@@ -750,33 +750,29 @@ final class VMS_Reciprocation extends Singleton {
 	public function ajax_register_recip_club(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_RECIPROCATION );
 
-		try {
-			// Accept either 'club_status' (direct) or 'status' (from the frontend form).
-			$status = self::get_post_text( 'club_status' ) ?: self::get_post_text( 'status' ) ?: 'active';
+		// Accept either 'club_status' (direct) or 'status' (from the frontend form).
+		$status = self::get_post_text( 'club_status' ) ?: self::get_post_text( 'status' ) ?: 'active';
 
-			$result = self::create_club(
-				array(
-					'club_name'        => self::get_post_text( 'club_name' ),
-					'club_email'       => self::get_post_email( 'club_email' ),
-					'club_phone'       => self::get_post_text( 'club_phone' ),
-					'club_website'     => self::get_post_text( 'club_website' ),
-					'club_address'     => self::get_post_text( 'club_address' ),
-					'country'          => self::get_post_text( 'country' ),
-					'club_status'      => $status,
-					'is_reciprocating' => self::get_post_int( 'is_reciprocating' ) ?: 1,
-					'notes'            => self::get_post_text( 'notes' ),
-				)
-			);
+		$result = self::create_club(
+			array(
+				'club_name'        => self::get_post_text( 'club_name' ),
+				'club_email'       => self::get_post_email( 'club_email' ),
+				'club_phone'       => self::get_post_text( 'club_phone' ),
+				'club_website'     => self::get_post_text( 'club_website' ),
+				'club_address'     => self::get_post_text( 'club_address' ),
+				'country'          => self::get_post_text( 'country' ),
+				'club_status'      => $status,
+				'is_reciprocating' => self::get_post_int( 'is_reciprocating' ) ?: 1,
+				'notes'            => self::get_post_text( 'notes' ),
+			)
+		);
 
-			if ( is_wp_error( $result ) ) {
-				wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code(), 'data' => $result->get_error_data() ) );
-			}
-
-			$club = self::get_club( $result );
-			wp_send_json_success( array( 'club' => $club, 'message' => __( 'Reciprocating club registered successfully.', 'vms-plugin' ) ) );
-		} catch ( \Throwable $e ) {
-			wp_send_json_error( array( 'message' => __( 'An unexpected error occurred. Please try again.', 'vms-plugin' ) ) );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code(), 'data' => $result->get_error_data() ) );
 		}
+
+		$club = self::get_club( $result );
+		wp_send_json_success( array( 'club' => $club, 'message' => __( 'Reciprocating club registered successfully.', 'vms-plugin' ) ) );
 	}
 
 	/**
@@ -861,34 +857,30 @@ final class VMS_Reciprocation extends Singleton {
 	public function ajax_register_recip_member(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_RECIPROCATION );
 
-		try {
-			// Accept 'member_status' or 'status' from the frontend form.
-			$status = self::get_post_text( 'member_status' ) ?: self::get_post_text( 'status' ) ?: 'active';
+		// Accept 'member_status' or 'status' from the frontend form.
+		$status = self::get_post_text( 'member_status' ) ?: self::get_post_text( 'status' ) ?: 'active';
 
-			$result = self::create_member(
-				array(
-					'club_id'          => self::get_post_int( 'club_id' ),
-					'first_name'       => self::get_post_text( 'first_name' ),
-					'last_name'        => self::get_post_text( 'last_name' ),
-					'email'            => self::get_post_email( 'email' ),
-					'phone_number'     => self::get_post_text( 'phone_number' ) ?: self::get_post_text( 'phone' ),
-					'id_number'        => self::get_post_text( 'id_number' ),
-					'member_number'    => self::get_post_text( 'member_number' ),
-					'member_status'    => $status,
-					'receive_emails'   => self::get_post_int( 'receive_emails' ),
-					'receive_messages' => self::get_post_int( 'receive_messages' ),
-				)
-			);
+		$result = self::create_member(
+			array(
+				'club_id'          => self::get_post_int( 'club_id' ),
+				'first_name'       => self::get_post_text( 'first_name' ),
+				'last_name'        => self::get_post_text( 'last_name' ),
+				'email'            => self::get_post_email( 'email' ),
+				'phone_number'     => self::get_post_text( 'phone_number' ) ?: self::get_post_text( 'phone' ),
+				'id_number'        => self::get_post_text( 'id_number' ),
+				'member_number'    => self::get_post_text( 'member_number' ),
+				'member_status'    => $status,
+				'receive_emails'   => self::get_post_int( 'receive_emails' ),
+				'receive_messages' => self::get_post_int( 'receive_messages' ),
+			)
+		);
 
-			if ( is_wp_error( $result ) ) {
-				wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code(), 'data' => $result->get_error_data() ) );
-			}
-
-			$member = self::get_member( $result );
-			wp_send_json_success( array( 'member' => $member, 'message' => __( 'Reciprocating member registered successfully.', 'vms-plugin' ) ) );
-		} catch ( \Throwable $e ) {
-			wp_send_json_error( array( 'message' => __( 'An unexpected error occurred. Please try again.', 'vms-plugin' ) ) );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code(), 'data' => $result->get_error_data() ) );
 		}
+
+		$member = self::get_member( $result );
+		wp_send_json_success( array( 'member' => $member, 'message' => __( 'Reciprocating member registered successfully.', 'vms-plugin' ) ) );
 	}
 
 	/**

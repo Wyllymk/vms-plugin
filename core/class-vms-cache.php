@@ -282,9 +282,10 @@ final class VMS_Cache extends Singleton {
 			return;
 		}
 
-		$new_version = $version + 1;
+		$new_version = $current_version + 1;
+
 		$this->log( 'VMS_Cache::flush_group() - Incrementing version from ' . $current_version . ' to ' . $new_version );
-		
+
 		// Use autoload=false for version options to prevent loading on every page.
 		$updated = update_option( $version_key, $new_version, false );
 

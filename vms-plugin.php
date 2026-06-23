@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       Visitor Management System Original
+ * Plugin Name:       Visitor Management System
  * Plugin URI:        https://github.com/Wyllymk/vms-plugin
  * Description:       Complete visitor management system for clubs & organizations. Track guests, enforce visit limits, manage suppliers, reciprocating clubs with SMS/Email notifications and comprehensive audit trails.
  * Version:           2.0.0
