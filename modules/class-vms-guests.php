@@ -1190,20 +1190,7 @@ final class VMS_Guests extends Singleton {
 	 * @return void
 	 */
 	public function ajax_register_guest(): void {
-
-	error_log(
-		sprintf(
-			'[VMS] ajax_register_guest START | user_id=%d',
-			get_current_user_id()
-		)
-	);
-
-	self::verify_ajax(
-		'vms_guest_nonce',
-		VMS_Config::CAP_REGISTER_GUESTS
-	);
-
-	try {
+		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_REGISTER_GUESTS );
 
 		$guest_data = array(
 			'first_name'       => self::get_post_text( 'first_name' ),
@@ -1216,42 +1203,9 @@ final class VMS_Guests extends Singleton {
 			'notes'            => self::get_post_text( 'notes' ),
 		);
 
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest DATA | %s',
-				wp_json_encode(
-					array(
-						'first_name' => $guest_data['first_name'],
-						'last_name'  => $guest_data['last_name'],
-						'email'      => $guest_data['email'],
-						'id_number'  => $guest_data['id_number'],
-					)
-				)
-			)
-		);
-
-		error_log( '[VMS] ajax_register_guest CALLING create_guest()' );
-
 		$result = self::create_guest( $guest_data );
 
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest create_guest RESULT TYPE = %s',
-				is_wp_error( $result ) ? 'WP_ERROR' : gettype( $result )
-			)
-		);
-
 		if ( is_wp_error( $result ) ) {
-
-			error_log(
-				sprintf(
-					'[VMS] ajax_register_guest ERROR | code=%s | message=%s | data=%s',
-					$result->get_error_code(),
-					$result->get_error_message(),
-					wp_json_encode( $result->get_error_data() )
-				)
-			);
-
 			wp_send_json_error(
 				array(
 					'message' => $result->get_error_message(),
@@ -1261,28 +1215,7 @@ final class VMS_Guests extends Singleton {
 			);
 		}
 
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest SUCCESS | guest_id=%d',
-				$result
-			)
-		);
-
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest CALLING get_guest(%d)',
-				$result
-			)
-		);
-
 		$guest = self::get_guest( $result );
-
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest GUEST FETCHED | found=%s',
-				$guest ? 'YES' : 'NO'
-			)
-		);
 
 		wp_send_json_success(
 			array(
@@ -1290,32 +1223,7 @@ final class VMS_Guests extends Singleton {
 				'message' => __( 'Guest registered successfully.', 'vms-plugin' ),
 			)
 		);
-
-	} catch ( \Throwable $e ) {
-
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest EXCEPTION | %s | %s:%d',
-				$e->getMessage(),
-				$e->getFile(),
-				$e->getLine()
-			)
-		);
-
-		error_log(
-			sprintf(
-				'[VMS] ajax_register_guest TRACE | %s',
-				$e->getTraceAsString()
-			)
-		);
-
-		wp_send_json_error(
-			array(
-				'message' => __( 'An unexpected error occurred. Please try again.', 'vms-plugin' ),
-			)
-		);
 	}
-}
 
 	/**
 	 * AJAX: update guest.
@@ -1486,13 +1394,6 @@ final class VMS_Guests extends Singleton {
 		// Courtesy requires special capability.
 		$courtesy = self::get_post_text( 'courtesy' );
 		if ( $courtesy && ! current_user_can( VMS_Config::CAP_REGISTER_COURTESY ) ) {
-			error_log(
-				sprintf(
-					'[VMS] Courtesy registration denied. User ID: %d',
-					get_current_user_id()
-				)
-			);
-
 			wp_send_json_error(
 				array(
 					'message' => __( 'You do not have permission to register courtesy guests.', 'vms-plugin' ),
@@ -1500,79 +1401,32 @@ final class VMS_Guests extends Singleton {
 			);
 		}
 
-		try {
-			$guest_id   = self::get_post_int( 'guest_id' );
-			$visit_date = self::get_post_text( 'visit_date' );
+		$guest_id   = self::get_post_int( 'guest_id' );
+		$visit_date = self::get_post_text( 'visit_date' );
 
-			error_log(
-				sprintf(
-					'[VMS] Register Visit Request | User: %d | Guest: %s | Host: %s | Date: %s | Courtesy: %s',
-					get_current_user_id(),
-					$guest_id,
-					$host_id,
-					$visit_date,
-					$courtesy ?: 'none'
-				)
-			);
+		$result = self::register_visit(
+			$guest_id,
+			$visit_date,
+			$host_id ?: null,
+			$courtesy ?: null
+		);
 
-			$result = self::register_visit(
-				$guest_id,
-				$visit_date,
-				$host_id ?: null,
-				$courtesy ?: null
-			);
-
-			if ( is_wp_error( $result ) ) {
-
-				error_log(
-					sprintf(
-						'[VMS] Register Visit Failed | User: %d | Error: %s',
-						get_current_user_id(),
-						$result->get_error_message()
-					)
-				);
-
-				wp_send_json_error(
-					array(
-						'message' => $result->get_error_message(),
-					)
-				);
-			}
-
-			error_log(
-				sprintf(
-					'[VMS] Register Visit Success | Visit ID: %s',
-					$result['id'] ?? 'unknown'
-				)
-			);
-
-			wp_send_json_success(
-				array(
-					'visit'   => $result,
-					'message' => __( 'Visit registered.', 'vms-plugin' ),
-				)
-			);
-
-		} catch ( \Throwable $e ) {
-
-			error_log(
-				sprintf(
-					'[VMS] Exception in ajax_register_visit | User: %d | Message: %s | File: %s | Line: %d | Trace: %s',
-					get_current_user_id(),
-					$e->getMessage(),
-					$e->getFile(),
-					$e->getLine(),
-					$e->getTraceAsString()
-				)
-			);
-
+		if ( is_wp_error( $result ) ) {
 			wp_send_json_error(
 				array(
-					'message' => __( 'An unexpected error occurred. Please try again.', 'vms-plugin' ),
+					'message' => $result->get_error_message(),
 				)
 			);
 		}
+
+		wp_send_json_success(
+			array(
+				'visit'   => $result,
+				'message' => __( 'Visit registered.', 'vms-plugin' ),
+			)
+		);
 	}
+
 
 	/**
 	 * AJAX: cancel a visit.
