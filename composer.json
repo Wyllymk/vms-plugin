@@ -1,0 +1,61 @@
+{
+	"name": "wyllymk/vms-plugin",
+	"description": "Visitor Management System plugin for WordPress — track guests, enforce visit limits, manage suppliers & reciprocating clubs with SMS/Email notifications and comprehensive audit trails.",
+	"version": "2.0.0",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"authors": [
+		{
+			"name": "WyllyMk",
+			"homepage": "https://wilsondevops.com"
+		}
+	],
+	"require": {
+		"php": ">=8.0",
+		"yahnis-elsts/plugin-update-checker": "^5.4",
+		"dompdf/dompdf": "^3.0"
+	},
+	"require-dev": {
+		"wp-coding-standards/wpcs": "^3.1",
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+		"phpcompatibility/phpcompatibility-wp": "^2.1",
+		"phpunit/phpunit": "^9.6",
+		"yoast/phpunit-polyfills": "^2.0",
+		"brain/monkey": "^2.6",
+		"php-stubs/wordpress-stubs": "^6.4"
+	},
+	"autoload": {
+		"classmap": [
+			"abstract/",
+			"core/",
+			"security/",
+			"modules/",
+			"admin/",
+			"integrations/",
+			"integrations/sms-providers/"
+		]
+	},
+	"autoload-dev": {
+		"classmap": [
+			"tests/"
+		]
+	},
+	"scripts": {
+		"lint": "phpcs",
+		"lint:fix": "phpcbf",
+		"test": "phpunit --configuration tests/phpunit.xml.dist",
+		"test:unit": "phpunit --configuration tests/phpunit.xml.dist --testsuite unit",
+		"test:integration": "phpunit --configuration tests/phpunit.xml.dist --testsuite integration",
+		"test:coverage": "XDEBUG_MODE=coverage phpunit --configuration tests/phpunit.xml.dist --coverage-html coverage/",
+		"install-wp-tests": "bash bin/install-wp-tests.sh"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		},
+		"optimize-autoloader": true,
+		"sort-packages": true
+	},
+	"minimum-stability": "stable",
+	"prefer-stable": true
+}

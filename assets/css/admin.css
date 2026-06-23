@@ -1,0 +1,331 @@
+/**
+ * VMS Admin Styles — Glassmorphism Edition
+ *
+ * @package WyllyMk\VMS
+ * @since   2.1.0
+ */
+
+/* ─── Variables ───────────────────────────────────────────────────────── */
+:root {
+	--vms-admin-primary: #0ea5e9;
+	--vms-admin-primary-rgb: 14, 165, 233;
+	--vms-admin-secondary: #8b5cf6;
+	--vms-admin-bg: #f0f4f8;
+	--vms-admin-glass: rgba(255, 255, 255, 0.7);
+	--vms-admin-glass-border: rgba(255, 255, 255, 0.4);
+	--vms-admin-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+	--vms-admin-shadow-hover: 0 12px 40px rgba(0, 0, 0, 0.1);
+	--vms-admin-radius: 16px;
+	--vms-admin-radius-sm: 12px;
+}
+
+/* ─── Dashboard Wrap ──────────────────────────────────────────────────── */
+.vms-admin-dashboard {
+	max-width: 1200px;
+	padding: 20px 0;
+}
+
+.vms-admin-dashboard h1 {
+	font-size: 28px;
+	font-weight: 700;
+	background: linear-gradient(135deg, var(--vms-admin-primary), var(--vms-admin-secondary));
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+	margin-bottom: 24px;
+}
+
+/* ─── Glass Cards ─────────────────────────────────────────────────────── */
+.vms-admin-dashboard .card,
+.wrap .card {
+	background: var(--vms-admin-glass);
+	backdrop-filter: blur(20px) saturate(1.4);
+	-webkit-backdrop-filter: blur(20px) saturate(1.4);
+	border: 1px solid var(--vms-admin-glass-border);
+	border-radius: var(--vms-admin-radius);
+	box-shadow: var(--vms-admin-shadow);
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	position: relative;
+	overflow: hidden;
+}
+
+.vms-admin-dashboard .card::before,
+.wrap .card::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: linear-gradient(135deg,
+		rgba(255, 255, 255, 0.3) 0%,
+		rgba(255, 255, 255, 0) 60%);
+	pointer-events: none;
+}
+
+.vms-admin-dashboard .card:hover,
+.wrap .card:hover {
+	box-shadow: var(--vms-admin-shadow-hover);
+	transform: translateY(-2px);
+	border-color: rgba(var(--vms-admin-primary-rgb), 0.3);
+}
+
+/* ─── Stat Cards ──────────────────────────────────────────────────────── */
+.vms-admin-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 20px;
+	margin: 24px 0;
+}
+
+.vms-admin-cards .card {
+	padding: 24px;
+	position: relative;
+}
+
+.vms-admin-cards .card h3 {
+	color: #64748b;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-weight: 600;
+	margin: 0 0 12px;
+}
+
+.vms-admin-cards .card p {
+	color: #0f172a;
+	font-size: 32px;
+	font-weight: 800;
+	margin: 0;
+	line-height: 1;
+	background: linear-gradient(135deg, var(--vms-admin-primary), var(--vms-admin-secondary));
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+/* ─── Tables ──────────────────────────────────────────────────────────── */
+.vms-admin-dashboard .widefat,
+.wrap .widefat {
+	border: none;
+	border-radius: var(--vms-admin-radius-sm);
+	overflow: hidden;
+}
+
+.vms-admin-dashboard .widefat thead th,
+.wrap .widefat thead th {
+	background: linear-gradient(135deg, var(--vms-admin-primary), var(--vms-admin-secondary));
+	color: #fff;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	font-weight: 600;
+	padding: 12px 16px;
+	border: none;
+}
+
+.vms-admin-dashboard .widefat td,
+.wrap .widefat td {
+	padding: 10px 16px;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+	font-size: 13px;
+}
+
+.vms-admin-dashboard .widefat tr:hover td,
+.wrap .widefat tr:hover td {
+	background: rgba(var(--vms-admin-primary-rgb), 0.04);
+}
+
+.vms-admin-dashboard .widefat code,
+.wrap .widefat code {
+	background: rgba(var(--vms-admin-primary-rgb), 0.08);
+	color: var(--vms-admin-primary);
+	padding: 2px 8px;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+/* ─── Section Titles in Cards ─────────────────────────────────────────── */
+.vms-admin-dashboard .card h2,
+.wrap .card h2 {
+	font-size: 16px;
+	font-weight: 700;
+	color: #1e293b;
+	margin: 0 0 16px;
+	padding-bottom: 12px;
+	border-bottom: 2px solid rgba(var(--vms-admin-primary-rgb), 0.15);
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────── */
+.vms-admin-dashboard .button-primary,
+.wrap .vms-admin-dashboard .button-primary {
+	background: linear-gradient(135deg, var(--vms-admin-primary), var(--vms-admin-secondary));
+	border: none;
+	border-radius: 10px;
+	padding: 8px 20px;
+	font-weight: 600;
+	font-size: 13px;
+	letter-spacing: 0.02em;
+	box-shadow: 0 4px 14px rgba(var(--vms-admin-primary-rgb), 0.3);
+	transition: all 0.2s ease;
+	text-shadow: none;
+}
+
+.vms-admin-dashboard .button-primary:hover,
+.wrap .vms-admin-dashboard .button-primary:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 6px 20px rgba(var(--vms-admin-primary-rgb), 0.4);
+}
+
+/* ─── Status Badges ───────────────────────────────────────────────────── */
+.vms-admin-dashboard span[style*="color:green"],
+.wrap span[style*="color:green"] {
+	background: #dcfce7;
+	color: #166534 !important;
+	padding: 3px 10px;
+	border-radius: 20px;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.vms-admin-dashboard span[style*="color:red"],
+.wrap span[style*="color:red"] {
+	background: #fee2e2;
+	color: #991b1b !important;
+	padding: 3px 10px;
+	border-radius: 20px;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* ─── System Info page ────────────────────────────────────────────────── */
+.wrap > h1 {
+	font-size: 24px;
+	font-weight: 700;
+	color: #1e293b;
+}
+
+.wrap > .card + .card {
+	margin-top: 20px;
+}
+
+.wrap .card ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.wrap .card ul li {
+	padding: 8px 0;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+	font-size: 14px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.wrap .card ul li:last-child {
+	border-bottom: none;
+}
+
+/* ─── Settings Form ───────────────────────────────────────────────────── */
+.vms-settings-wrap .form-table th {
+	width: 220px;
+	font-weight: 600;
+	color: #475569;
+	font-size: 13px;
+}
+
+.vms-settings-wrap .form-table td input[type="text"],
+.vms-settings-wrap .form-table td input[type="email"],
+.vms-settings-wrap .form-table td input[type="number"],
+.vms-settings-wrap .form-table td input[type="url"],
+.vms-settings-wrap .form-table td select,
+.vms-settings-wrap .form-table td textarea {
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 8px 14px;
+	font-size: 14px;
+	transition: all 0.2s ease;
+	background: rgba(255, 255, 255, 0.8);
+	backdrop-filter: blur(4px);
+}
+
+.vms-settings-wrap .form-table td input:focus,
+.vms-settings-wrap .form-table td select:focus,
+.vms-settings-wrap .form-table td textarea:focus {
+	border-color: var(--vms-admin-primary);
+	box-shadow: 0 0 0 3px rgba(var(--vms-admin-primary-rgb), 0.12);
+	outline: none;
+}
+
+.vms-settings-wrap .vms-media-field {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.vms-settings-wrap .vms-media-preview img {
+	border-radius: 10px;
+	border: 2px solid var(--vms-admin-glass-border);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Notices ─────────────────────────────────────────────────────────── */
+.vms-admin-dashboard .notice,
+.wrap .notice {
+	border-radius: var(--vms-admin-radius-sm);
+	border-left-width: 4px;
+	backdrop-filter: blur(8px);
+}
+
+/* ─── Dropdown Fix ────────────────────────────────────────────────────── */
+.vms-admin-dashboard select,
+.wrap select {
+	appearance: none;
+	-webkit-appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+	background-size: 14px;
+	padding-right: 36px;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 8px 36px 8px 14px;
+	font-size: 14px;
+	background-color: rgba(255, 255, 255, 0.8);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.vms-admin-dashboard select:hover,
+.wrap select:hover {
+	border-color: rgba(var(--vms-admin-primary-rgb), 0.4);
+}
+
+.vms-admin-dashboard select:focus,
+.wrap select:focus {
+	border-color: var(--vms-admin-primary);
+	box-shadow: 0 0 0 3px rgba(var(--vms-admin-primary-rgb), 0.12);
+	outline: none;
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────── */
+@keyframes vms-fadeInUp {
+	from {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.vms-admin-dashboard .card {
+	animation: vms-fadeInUp 0.4s ease both;
+}
+
+.vms-admin-cards .card:nth-child(1) { animation-delay: 0s; }
+.vms-admin-cards .card:nth-child(2) { animation-delay: 0.08s; }
+.vms-admin-cards .card:nth-child(3) { animation-delay: 0.16s; }
+.vms-admin-cards .card:nth-child(4) { animation-delay: 0.24s; }

@@ -1,0 +1,31 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# Build artifacts
+/build/
+/coverage/
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+debug.log
+
+# Local config overrides
+.phpcs.xml
+phpunit.xml
+.env
+.env.local
+
+# Lock files (keep composer.lock, exclude package-lock if reproducible builds not needed)
+# composer.lock should be committed for apps; uncomment next line if this is a library
+# composer.lock
