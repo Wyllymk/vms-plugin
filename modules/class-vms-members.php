@@ -49,18 +49,21 @@ final class VMS_Members extends Singleton {
 	protected function init(): void {
 		add_action( 'wp_ajax_vms_get_member_profile', array( $this, 'ajax_get_member_profile' ) );
 		add_action( 'wp_ajax_vms_update_member_profile', array( $this, 'ajax_update_member_profile' ) );
+		add_action( 'wp_ajax_vms_update_member', array( $this, 'ajax_update_member_profile' ) ); // Alias
 		add_action( 'wp_ajax_vms_change_password', array( $this, 'ajax_change_password' ) );
 		add_action( 'wp_ajax_vms_get_members_list', array( $this, 'ajax_get_members_list' ) );
 		add_action( 'wp_ajax_vms_approve_member', array( $this, 'ajax_approve_member' ) );
 		add_action( 'wp_ajax_vms_reject_member', array( $this, 'ajax_reject_member' ) );
 		add_action( 'wp_ajax_vms_update_member_status', array( $this, 'ajax_update_member_status' ) );
 		add_action( 'wp_ajax_vms_get_pending_members', array( $this, 'ajax_get_pending_members' ) );
+		add_action( 'wp_ajax_vms_change_member_role', array( $this, 'ajax_change_member_role' ) );
+		add_action( 'wp_ajax_vms_delete_member', array( $this, 'ajax_delete_member' ) );
 
 		// Public registration endpoint — no login required.
 		add_action( 'wp_ajax_nopriv_vms_register_member', array( $this, 'ajax_register_member' ) );
 		add_action( 'wp_ajax_vms_register_member', array( $this, 'ajax_register_member' ) );
 
-		// Block pending members from logging in until approved.
+		// Block pending/suspended/banned members from logging in.
 		add_filter( 'authenticate', array( $this, 'block_pending_login' ), 30, 3 );
 	}
 
@@ -231,9 +234,9 @@ final class VMS_Members extends Singleton {
 			return $user;
 		}
 
-		// Only gate users with the `member` role — staff accounts created
+		// Only gate users with the `member` or `chairman` role — staff accounts created
 		// directly in wp-admin have no status meta and should pass through.
-		if ( ! in_array( 'member', $user->roles, true ) ) {
+		if ( ! in_array( 'member', $user->roles, true ) && ! in_array( 'chairman', $user->roles, true ) ) {
 			return $user;
 		}
 
@@ -250,6 +253,20 @@ final class VMS_Members extends Singleton {
 			return new \WP_Error(
 				'vms_rejected',
 				__( 'Your membership application was not approved. Please contact the club for more information.', 'vms-plugin' )
+			);
+		}
+		
+		if ( VMS_Config::STATUS_SUSPENDED === $status ) {
+			return new \WP_Error(
+				'vms_suspended',
+				__( 'Your account has been suspended. Please contact the club for assistance.', 'vms-plugin' )
+			);
+		}
+
+		if ( VMS_Config::STATUS_BANNED === $status ) {
+			return new \WP_Error(
+				'vms_banned',
+				__( 'Your account has been permanently banned. Please contact the club for more information.', 'vms-plugin' )
 			);
 		}
 
@@ -394,30 +411,24 @@ final class VMS_Members extends Singleton {
 	 * @return array|null
 	 */
 	public static function get_member_profile( int $user_id ): ?array {
-		return VMS_Cache::cached(
-			"members:profile_{$user_id}",
-			static function () use ( $user_id ) {
-				$user = get_userdata( $user_id );
-				if ( ! $user ) {
-					return null;
-				}
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return null;
+		}
 
-				return array(
-					'user_id'       => $user_id,
-					'first_name'    => $user->first_name,
-					'last_name'     => $user->last_name,
-					'email'         => $user->user_email,
-					'display_name'  => $user->display_name,
-					'phone'         => get_user_meta( $user_id, self::META_PHONE, true ) ?: '',
-					'member_number' => get_user_meta( $user_id, self::META_MEMBER_NUMBER, true ) ?: '',
-					'receive_sms'   => (bool) get_user_meta( $user_id, self::META_RECEIVE_SMS, true ),
-					'receive_email' => (bool) get_user_meta( $user_id, self::META_RECEIVE_EMAIL, true ),
-					'member_status' => get_user_meta( $user_id, self::META_VMS_STATUS, true ) ?: VMS_Config::STATUS_ACTIVE,
-					'roles'         => $user->roles,
-					'registered'    => $user->user_registered,
-				);
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
+		return array(
+			'user_id'       => $user_id,
+			'first_name'    => $user->first_name,
+			'last_name'     => $user->last_name,
+			'email'         => $user->user_email,
+			'display_name'  => $user->display_name,
+			'phone'         => get_user_meta( $user_id, self::META_PHONE, true ) ?: '',
+			'member_number' => get_user_meta( $user_id, self::META_MEMBER_NUMBER, true ) ?: '',
+			'receive_sms'   => (bool) get_user_meta( $user_id, self::META_RECEIVE_SMS, true ),
+			'receive_email' => (bool) get_user_meta( $user_id, self::META_RECEIVE_EMAIL, true ),
+			'member_status' => get_user_meta( $user_id, self::META_VMS_STATUS, true ) ?: VMS_Config::STATUS_ACTIVE,
+			'roles'         => $user->roles,
+			'registered'    => $user->user_registered,
 		);
 	}
 
@@ -916,5 +927,76 @@ final class VMS_Members extends Singleton {
 		}
 
 		wp_send_json_success( array( 'message' => __( 'Member status updated.', 'vms-plugin' ) ) );
+	}
+
+	/**
+	 * AJAX: change member role.
+	 *
+	 * @return void
+	 */
+	public function ajax_change_member_role(): void {
+		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_APPROVE_MEMBERS );
+
+		$user_id = self::get_post_int( 'user_id' );
+		$role    = self::get_post_text( 'role' );
+
+		if ( ! in_array( $role, array( 'member', 'chairman' ), true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid role for member account.', 'vms-plugin' ) ) );
+		}
+
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			wp_send_json_error( array( 'message' => __( 'Member not found.', 'vms-plugin' ) ) );
+		}
+
+		// Ensure target is actually a member/chairman before altering.
+		if ( ! in_array( 'member', $user->roles, true ) && ! in_array( 'chairman', $user->roles, true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Cannot change role of non-member accounts.', 'vms-plugin' ) ) );
+		}
+		
+		if ( in_array( $role, $user->roles, true ) ) {
+			wp_send_json_success( array( 'message' => __( 'Role is already assigned.', 'vms-plugin' ) ) );
+		}
+
+		$user->set_role( $role );
+
+		VMS_Cache::bust( 'members' );
+		VMS_Audit_Trail::log( 'member_role_changed', VMS_Audit_Trail::CAT_MEMBER, 'user', $user_id, array(), array( 'new_role' => $role ) );
+
+		wp_send_json_success( array( 'message' => __( 'Member role updated successfully.', 'vms-plugin' ) ) );
+	}
+
+	/**
+	 * AJAX: delete member.
+	 *
+	 * @return void
+	 */
+	public function ajax_delete_member(): void {
+		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_APPROVE_MEMBERS );
+
+		$user_id = self::get_post_int( 'user_id' );
+		
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			wp_send_json_error( array( 'message' => __( 'Member not found.', 'vms-plugin' ) ) );
+		}
+
+		if ( ! in_array( 'member', $user->roles, true ) && ! in_array( 'chairman', $user->roles, true ) ) {
+			wp_send_json_error( array( 'message' => __( 'You can only delete member accounts.', 'vms-plugin' ) ) );
+		}
+
+		if ( $user_id === get_current_user_id() ) {
+			wp_send_json_error( array( 'message' => __( 'You cannot delete your own account.', 'vms-plugin' ) ) );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		if ( ! wp_delete_user( $user_id ) ) {
+			wp_send_json_error( array( 'message' => __( 'Failed to delete member.', 'vms-plugin' ) ) );
+		}
+
+		VMS_Cache::bust( 'members' );
+		VMS_Audit_Trail::log( 'member_deleted', VMS_Audit_Trail::CAT_MEMBER, 'user', $user_id );
+
+		wp_send_json_success( array( 'message' => __( 'Member deleted.', 'vms-plugin' ) ) );
 	}
 }

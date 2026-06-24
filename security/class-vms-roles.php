@@ -78,7 +78,7 @@ final class VMS_Roles {
 		),
 
 		'reception' => array(
-			'name' => 'Reception',
+			'name' => 'Receptionist',
 			'caps' => array(
 				'read'                          => true,
 				VMS_Config::CAP_REGISTER_GUESTS => true,

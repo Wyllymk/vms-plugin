@@ -199,22 +199,16 @@ final class VMS_Reciprocation extends Singleton {
 	 * @return array|null
 	 */
 	public static function get_club( int $club_id ): ?array {
-		return VMS_Cache::cached(
-			"recip:club_id_{$club_id}",
-			static function () use ( $club_id ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_RECIP_CLUBS );
+		global $wpdb;
+		$table = VMS_Config::get_table_name( VMS_Config::TABLE_RECIP_CLUBS );
 
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $club_id ),
-					ARRAY_A
-				);
-
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $club_id ),
+			ARRAY_A
 		);
+
+		return $row ?: null;
 	}
 
 	/**
@@ -384,22 +378,16 @@ final class VMS_Reciprocation extends Singleton {
 	 * @return array|null
 	 */
 	public static function get_member( int $member_id ): ?array {
-		return VMS_Cache::cached(
-			"recip:member_id_{$member_id}",
-			static function () use ( $member_id ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_RECIP_MEMBERS );
+		global $wpdb;
+		$table = VMS_Config::get_table_name( VMS_Config::TABLE_RECIP_MEMBERS );
 
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $member_id ),
-					ARRAY_A
-				);
-
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $member_id ),
+			ARRAY_A
 		);
+
+		return $row ?: null;
 	}
 
 	/**

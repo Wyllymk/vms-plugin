@@ -1,10 +1,9 @@
 <?php
 /**
- * Employee management module.
+ * Employee (Staff) management module.
  *
- * Handles the complete employee lifecycle: registration, profile updates,
- * search, and deletion. All writes trigger cache invalidation, audit
- * logging, and notifications automatically.
+ * Handles staff profile management using WordPress user accounts and user meta,
+ * replacing the legacy custom table approach.
  *
  * @package WyllyMk\VMS
  * @since   2.0.0
@@ -21,317 +20,436 @@ final class VMS_Employees extends Singleton {
 
 	use Base_Ajax_Trait;
 
+	public const META_STAFF_STATUS    = 'vms_staff_status';
+	public const META_EMPLOYEE_NUMBER = 'vms_employee_number';
+	public const META_ID_NUMBER       = 'vms_id_number';
+	public const META_PHONE           = 'vms_phone';
+	public const META_HIRE_DATE       = 'vms_hire_date';
+	public const META_DEPARTMENT      = 'vms_department';
+
+	public const STAFF_ROLES = array( 'gate', 'reception', 'general_manager' );
+
 	/**
 	 * Initialize hooks.
 	 *
 	 * @return void
 	 */
 	protected function init(): void {
-		// Employee CRUD.
-		add_action( 'wp_ajax_vms_register_employee', array( $this, 'ajax_register_employee' ) );
-		add_action( 'wp_ajax_vms_update_employee', array( $this, 'ajax_update_employee' ) );
-		add_action( 'wp_ajax_vms_delete_employee', array( $this, 'ajax_delete_employee' ) );
-		add_action( 'wp_ajax_vms_get_employees', array( $this, 'ajax_get_employees' ) );
-		add_action( 'wp_ajax_vms_search_employees', array( $this, 'ajax_search_employees' ) );
+		// Staff CRUD.
+		add_action( 'wp_ajax_vms_create_staff', array( $this, 'ajax_create_staff' ) );
+		add_action( 'wp_ajax_vms_update_staff', array( $this, 'ajax_update_staff' ) );
+		add_action( 'wp_ajax_vms_delete_staff', array( $this, 'ajax_delete_staff' ) );
+		add_action( 'wp_ajax_vms_get_staff_list', array( $this, 'ajax_get_staff_list' ) );
+		add_action( 'wp_ajax_vms_get_staff_profile', array( $this, 'ajax_get_staff_profile' ) );
+		add_action( 'wp_ajax_vms_search_staff', array( $this, 'ajax_search_staff' ) );
+
+		// Legacy endpoints for backward compatibility.
+		add_action( 'wp_ajax_vms_register_employee', array( $this, 'ajax_create_staff' ) );
+		add_action( 'wp_ajax_vms_update_employee', array( $this, 'ajax_update_staff' ) );
+		add_action( 'wp_ajax_vms_delete_employee', array( $this, 'ajax_delete_staff' ) );
+		add_action( 'wp_ajax_vms_get_employees', array( $this, 'ajax_get_staff_list' ) );
+		add_action( 'wp_ajax_vms_search_employees', array( $this, 'ajax_search_staff' ) );
+
+		// Block suspended/banned staff from logging in.
+		add_filter( 'authenticate', array( $this, 'block_staff_login' ), 30, 3 );
 	}
 
 	// =====================================================================
-	// EMPLOYEE CRUD
+	// STAFF CRUD
 	// =====================================================================
 
 	/**
-	 * Create an employee record.
+	 * Get staff profile.
 	 *
-	 * @param array $data Employee data.
-	 * @return int|\WP_Error Employee ID or error.
-	 */
-	public static function create_employee( array $data ) {
-		global $wpdb;
-
-		$validated = self::validate_employee_data( $data );
-		if ( is_wp_error( $validated ) ) {
-			return $validated;
-		}
-
-		// Check for duplicate employee number.
-		$existing = self::find_by_employee_number( $validated['employee_number'] );
-		if ( $existing ) {
-			return new \WP_Error(
-				'duplicate_employee_number',
-				__( 'An employee with this employee number already exists.', 'vms-plugin' ),
-				array( 'existing_id' => $existing['id'] )
-			);
-		}
-
-		$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$result = $wpdb->insert(
-			$table,
-			array(
-				'wp_user_id'      => $validated['wp_user_id'],
-				'employee_number' => $validated['employee_number'],
-				'first_name'      => $validated['first_name'],
-				'last_name'       => $validated['last_name'],
-				'email'           => $validated['email'],
-				'phone_number'    => $validated['phone_number'],
-				'id_number'       => $validated['id_number'],
-				'department'      => $validated['department'],
-				'position'        => $validated['position'],
-				'employee_status' => VMS_Config::STATUS_ACTIVE,
-				'hire_date'       => $validated['hire_date'],
-				'created_at'      => current_time( 'mysql' ),
-			),
-			array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
-		);
-
-		if ( false === $result ) {
-			return new \WP_Error( 'db_insert_failed', __( 'Failed to create employee record.', 'vms-plugin' ) );
-		}
-
-		$employee_id = $wpdb->insert_id;
-
-		VMS_Cache::bust( 'employees' );
-		VMS_Audit_Trail::log_create( VMS_Audit_Trail::CAT_EMPLOYEE, 'employee', $employee_id, $validated );
-
-		/**
-		 * Fires after an employee is created.
-		 *
-		 * @since 2.0.0
-		 * @param int   $employee_id Employee ID.
-		 * @param array $data        Employee data.
-		 */
-		do_action( 'vms_employee_created', $employee_id, $validated );
-
-		return $employee_id;
-	}
-
-	/**
-	 * Update an employee record.
-	 *
-	 * @param int   $employee_id Employee ID.
-	 * @param array $data        Updated data.
-	 * @return bool|\WP_Error
-	 */
-	public static function update_employee( int $employee_id, array $data ) {
-		global $wpdb;
-
-		$old = self::get_employee( $employee_id );
-		if ( ! $old ) {
-			return new \WP_Error( 'not_found', __( 'Employee not found.', 'vms-plugin' ) );
-		}
-
-		$validated = self::validate_employee_data( $data, $employee_id );
-		if ( is_wp_error( $validated ) ) {
-			return $validated;
-		}
-
-		// Only update fields that were provided.
-		$update = array_intersect_key( $validated, $data );
-		if ( empty( $update ) ) {
-			return true; // Nothing to update.
-		}
-
-		$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$result = $wpdb->update( $table, $update, array( 'id' => $employee_id ) );
-
-		if ( false === $result ) {
-			return new \WP_Error( 'db_update_failed', __( 'Failed to update employee.', 'vms-plugin' ) );
-		}
-
-		VMS_Cache::bust( 'employees' );
-		VMS_Audit_Trail::log_update( VMS_Audit_Trail::CAT_EMPLOYEE, 'employee', $employee_id, $old, $update );
-
-		do_action( 'vms_employee_updated', $employee_id, $update, $old );
-
-		return true;
-	}
-
-	/**
-	 * Delete an employee.
-	 *
-	 * @param int $employee_id Employee ID.
-	 * @return bool|\WP_Error
-	 */
-	public static function delete_employee( int $employee_id ) {
-		global $wpdb;
-
-		$employee = self::get_employee( $employee_id );
-		if ( ! $employee ) {
-			return new \WP_Error( 'not_found', __( 'Employee not found.', 'vms-plugin' ) );
-		}
-
-		$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$result = $wpdb->delete( $table, array( 'id' => $employee_id ), array( '%d' ) );
-
-		if ( false === $result ) {
-			return new \WP_Error( 'db_delete_failed', __( 'Failed to delete employee.', 'vms-plugin' ) );
-		}
-
-		VMS_Cache::bust( 'employees' );
-		VMS_Audit_Trail::log_delete( VMS_Audit_Trail::CAT_EMPLOYEE, 'employee', $employee_id, $employee );
-
-		do_action( 'vms_employee_deleted', $employee_id, $employee );
-
-		return true;
-	}
-
-	/**
-	 * Get a single employee by ID (cached).
-	 *
-	 * @param int $employee_id Employee ID.
+	 * @param int $user_id WordPress user ID.
 	 * @return array|null
 	 */
-	public static function get_employee( int $employee_id ): ?array {
-		return VMS_Cache::cached(
-			"employees:id_{$employee_id}",
-			static function () use ( $employee_id ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
+	public static function get_staff_profile( int $user_id ): ?array {
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return null;
+		}
 
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $employee_id ),
-					ARRAY_A
-				);
+		$role = null;
+		foreach ( self::STAFF_ROLES as $r ) {
+			if ( in_array( $r, $user->roles, true ) ) {
+				$role = $r;
+				break;
+			}
+		}
 
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
+		if ( ! $role && ! in_array( 'administrator', $user->roles, true ) ) {
+			return null;
+		}
+
+		return array(
+			'user_id'         => $user_id,
+			'first_name'      => $user->first_name,
+			'last_name'       => $user->last_name,
+			'email'           => $user->user_email,
+			'display_name'    => $user->display_name,
+			'position'        => $role ?: 'administrator',
+			'employee_status' => get_user_meta( $user_id, self::META_STAFF_STATUS, true ) ?: VMS_Config::STATUS_ACTIVE,
+			'employee_number' => get_user_meta( $user_id, self::META_EMPLOYEE_NUMBER, true ) ?: '',
+			'id_number'       => get_user_meta( $user_id, self::META_ID_NUMBER, true ) ?: '',
+			'phone_number'    => get_user_meta( $user_id, self::META_PHONE, true ) ?: '',
+			'hire_date'       => get_user_meta( $user_id, self::META_HIRE_DATE, true ) ?: '',
+			'department'      => get_user_meta( $user_id, self::META_DEPARTMENT, true ) ?: '',
+			'registered'      => $user->user_registered,
 		);
 	}
 
 	/**
-	 * Find employee by employee number (cached).
-	 *
-	 * @param string $employee_number Employee number.
-	 * @return array|null
-	 */
-	public static function find_by_employee_number( string $employee_number ): ?array {
-		$employee_number = sanitize_text_field( $employee_number );
-
-		return VMS_Cache::cached(
-			'employees:empnum_' . md5( $employee_number ),
-			static function () use ( $employee_number ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE employee_number = %s", $employee_number ),
-					ARRAY_A
-				);
-
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
-		);
-	}
-
-	/**
-	 * Find employee by WordPress user ID (cached).
-	 *
-	 * @param int $wp_user_id WordPress user ID.
-	 * @return array|null
-	 */
-	public static function find_by_wp_user( int $wp_user_id ): ?array {
-		return VMS_Cache::cached(
-			"employees:wp_user_{$wp_user_id}",
-			static function () use ( $wp_user_id ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE wp_user_id = %d", $wp_user_id ),
-					ARRAY_A
-				);
-
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
-		);
-	}
-
-	/**
-	 * Get all employees (cached, paginated).
+	 * Get paginated staff list.
 	 *
 	 * @param int    $per_page Results per page.
 	 * @param int    $page     Page number (1-indexed).
 	 * @param string $status   Optional status filter.
+	 * @param string $search   Optional search term.
+	 * @param string $role     Optional role filter.
 	 * @return array{rows: array, total: int, pages: int}
 	 */
-	public static function get_employees( int $per_page = 50, int $page = 1, string $status = '' ): array {
-		$cache_key = "employees:list_{$per_page}_{$page}_{$status}";
+	public static function get_staff_list( int $per_page = 50, int $page = 1, string $status = '', string $search = '', string $role = '' ): array {
+		$cache_key = 'employees:list_' . md5( "{$per_page}_{$page}_{$status}_{$search}_{$role}" );
 
 		return VMS_Cache::cached(
 			$cache_key,
-			static function () use ( $per_page, $page, $status ) {
-				global $wpdb;
+			static function () use ( $per_page, $page, $status, $search, $role ) {
+				$roles = $role ? array( $role ) : self::STAFF_ROLES;
 
-				$table  = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
-				$where  = array( '1=1' );
-				$params = array();
+				$args = array(
+					'number'   => max( 1, min( 500, $per_page ) ),
+					'paged'    => max( 1, $page ),
+					'orderby'  => 'display_name',
+					'order'    => 'ASC',
+					'role__in' => $roles,
+				);
 
-				if ( $status ) {
-					$where[]  = 'employee_status = %s';
-					$params[] = sanitize_text_field( $status );
+				if ( $search ) {
+					$args['search']         = '*' . $search . '*';
+					$args['search_columns'] = array( 'user_login', 'user_email', 'display_name' );
 				}
 
-				$where_sql = implode( ' AND ', $where );
-				$per_page  = max( 1, min( 500, $per_page ) );
-				$offset    = max( 0, ( $page - 1 ) * $per_page );
+				if ( $status ) {
+					$args['meta_query'] = array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+						array(
+							'key'     => self::META_STAFF_STATUS,
+							'value'   => sanitize_text_field( $status ),
+							'compare' => '=',
+						),
+					);
+				}
 
-				// Count.
-				$count_sql = "SELECT COUNT(*) FROM `{$table}` WHERE {$where_sql}";
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-				$total = (int) $wpdb->get_var( $params ? $wpdb->prepare( $count_sql, $params ) : $count_sql );
+				$user_query = new \WP_User_Query( $args );
+				$users      = $user_query->get_results();
+				$total      = $user_query->get_total();
 
-				// Rows.
-				$params[] = $per_page;
-				$params[] = $offset;
-				$rows_sql = "SELECT * FROM `{$table}` WHERE {$where_sql} ORDER BY last_name ASC, first_name ASC LIMIT %d OFFSET %d";
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-				$rows = $wpdb->get_results( $wpdb->prepare( $rows_sql, $params ), ARRAY_A );
+				$rows = array();
+				foreach ( $users as $user ) {
+					$profile = self::get_staff_profile( $user->ID );
+					if ( $profile ) {
+						$profile['id'] = $user->ID;
+						$rows[]        = $profile;
+					}
+				}
 
 				return array(
 					'rows'  => $rows,
 					'total' => $total,
-					'pages' => (int) ceil( $total / $per_page ),
+					'pages' => (int) ceil( $total / max( 1, $per_page ) ),
 				);
 			},
 			VMS_Config::CACHE_TTL_SHORT
 		);
 	}
 
+	/**
+	 * Create a staff user.
+	 *
+	 * @param array $data Staff data.
+	 * @return int|\WP_Error User ID or error.
+	 */
+	public static function create_staff( array $data ) {
+		$first_name = sanitize_text_field( $data['first_name'] ?? '' );
+		$last_name  = sanitize_text_field( $data['last_name'] ?? '' );
+		$email      = sanitize_email( $data['email'] ?? '' );
+		$role       = sanitize_text_field( $data['role'] ?? '' );
+
+		if ( ! $first_name || ! $last_name || ! $email || ! $role ) {
+			return new \WP_Error( 'missing_fields', __( 'First name, last name, email, and role are required.', 'vms-plugin' ) );
+		}
+
+		if ( ! is_email( $email ) ) {
+			return new \WP_Error( 'invalid_email', __( 'Invalid email address.', 'vms-plugin' ) );
+		}
+
+		if ( email_exists( $email ) ) {
+			return new \WP_Error( 'email_exists', __( 'This email is already in use.', 'vms-plugin' ) );
+		}
+
+		if ( ! in_array( $role, self::STAFF_ROLES, true ) ) {
+			return new \WP_Error( 'invalid_role', __( 'Invalid staff role.', 'vms-plugin' ) );
+		}
+
+		// Only admins/GMs can create GMs.
+		if ( 'general_manager' === $role && ! current_user_can( 'manage_options' ) && 'general_manager' !== VMS_Roles::get_user_vms_role() ) {
+			return new \WP_Error( 'forbidden_role', __( 'You cannot assign the General Manager role.', 'vms-plugin' ) );
+		}
+
+		$emp_number = sanitize_text_field( $data['employee_number'] ?? '' );
+		if ( $emp_number ) {
+			// Check for dupes by emp number meta.
+			$dupe = get_users(
+				array(
+					'meta_key'   => self::META_EMPLOYEE_NUMBER,
+					'meta_value' => $emp_number,
+					'number'     => 1,
+					'fields'     => 'ids',
+				)
+			);
+			if ( $dupe ) {
+				return new \WP_Error( 'duplicate_emp_num', __( 'An employee with this number already exists.', 'vms-plugin' ) );
+			}
+		}
+
+		$base     = sanitize_user( strtolower( strtok( $email, '@' ) ), true ) ?: 'staff';
+		$username = $base;
+		$suffix   = 1;
+		while ( username_exists( $username ) ) {
+			$username = $base . $suffix++;
+		}
+
+		$password = isset( $data['password'] ) && $data['password'] ? $data['password'] : wp_generate_password();
+
+		$user_id = wp_insert_user(
+			array(
+				'user_login'   => $username,
+				'user_email'   => $email,
+				'user_pass'    => $password,
+				'first_name'   => $first_name,
+				'last_name'    => $last_name,
+				'display_name' => trim( $first_name . ' ' . $last_name ),
+				'role'         => $role,
+			)
+		);
+
+		if ( is_wp_error( $user_id ) ) {
+			return $user_id;
+		}
+
+		update_user_meta( $user_id, self::META_STAFF_STATUS, VMS_Config::STATUS_ACTIVE );
+		update_user_meta( $user_id, self::META_EMPLOYEE_NUMBER, $emp_number );
+		update_user_meta( $user_id, self::META_ID_NUMBER, sanitize_text_field( $data['id_number'] ?? '' ) );
+		update_user_meta( $user_id, self::META_PHONE, sanitize_text_field( $data['phone_number'] ?? '' ) );
+		update_user_meta( $user_id, self::META_DEPARTMENT, sanitize_text_field( $data['department'] ?? '' ) );
+		
+		$hire_date = sanitize_text_field( $data['hire_date'] ?? '' );
+		if ( $hire_date ) {
+			update_user_meta( $user_id, self::META_HIRE_DATE, gmdate( 'Y-m-d', strtotime( $hire_date ) ) );
+		}
+
+		VMS_Cache::bust( 'employees' );
+		VMS_Audit_Trail::log_create( VMS_Audit_Trail::CAT_EMPLOYEE, 'user', $user_id, $data );
+
+		do_action( 'vms_staff_created', $user_id, $data );
+
+		return $user_id;
+	}
+
+	/**
+	 * Update staff.
+	 *
+	 * @param int   $user_id User ID.
+	 * @param array $data    Updated data.
+	 * @return bool|\WP_Error
+	 */
+	public static function update_staff( int $user_id, array $data ) {
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return new \WP_Error( 'not_found', __( 'Staff member not found.', 'vms-plugin' ) );
+		}
+
+		$old_profile = self::get_staff_profile( $user_id );
+		if ( ! $old_profile ) {
+			return new \WP_Error( 'invalid_user', __( 'Not a valid staff member.', 'vms-plugin' ) );
+		}
+
+		$wp_data = array( 'ID' => $user_id );
+		$changed = false;
+
+		if ( isset( $data['first_name'] ) ) {
+			$wp_data['first_name'] = sanitize_text_field( $data['first_name'] );
+			$changed               = true;
+		}
+		if ( isset( $data['last_name'] ) ) {
+			$wp_data['last_name'] = sanitize_text_field( $data['last_name'] );
+			$changed              = true;
+		}
+		if ( isset( $data['email'] ) ) {
+			$email = sanitize_email( $data['email'] );
+			if ( $email && is_email( $email ) ) {
+				$wp_data['user_email'] = $email;
+				$changed               = true;
+			}
+		}
+		
+		if ( isset( $data['role'] ) ) {
+			$role = sanitize_text_field( $data['role'] );
+			if ( in_array( $role, self::STAFF_ROLES, true ) ) {
+				if ( 'general_manager' === $role && ! current_user_can( 'manage_options' ) && 'general_manager' !== VMS_Roles::get_user_vms_role() ) {
+					return new \WP_Error( 'forbidden_role', __( 'You cannot assign the General Manager role.', 'vms-plugin' ) );
+				}
+				$wp_data['role'] = $role;
+				$changed         = true;
+			}
+		}
+
+		if ( $changed ) {
+			$result = wp_update_user( $wp_data );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+		}
+
+		if ( isset( $data['employee_status'] ) ) {
+			$status = sanitize_text_field( $data['employee_status'] );
+			if ( in_array( $status, array( VMS_Config::STATUS_ACTIVE, VMS_Config::STATUS_SUSPENDED, VMS_Config::STATUS_BANNED ), true ) ) {
+				update_user_meta( $user_id, self::META_STAFF_STATUS, $status );
+			}
+		}
+
+		if ( isset( $data['employee_number'] ) ) {
+			$emp_num = sanitize_text_field( $data['employee_number'] );
+			// Check dupes
+			if ( $emp_num !== $old_profile['employee_number'] ) {
+				$dupe = get_users( array( 'meta_key' => self::META_EMPLOYEE_NUMBER, 'meta_value' => $emp_num, 'exclude' => array( $user_id ), 'fields' => 'ids' ) );
+				if ( $dupe ) {
+					return new \WP_Error( 'duplicate_emp_num', __( 'An employee with this number already exists.', 'vms-plugin' ) );
+				}
+			}
+			update_user_meta( $user_id, self::META_EMPLOYEE_NUMBER, $emp_num );
+		}
+
+		if ( isset( $data['id_number'] ) ) {
+			update_user_meta( $user_id, self::META_ID_NUMBER, sanitize_text_field( $data['id_number'] ) );
+		}
+		if ( isset( $data['phone_number'] ) ) {
+			update_user_meta( $user_id, self::META_PHONE, sanitize_text_field( $data['phone_number'] ) );
+		}
+		if ( isset( $data['department'] ) ) {
+			update_user_meta( $user_id, self::META_DEPARTMENT, sanitize_text_field( $data['department'] ) );
+		}
+		if ( isset( $data['hire_date'] ) ) {
+			$hire_date = sanitize_text_field( $data['hire_date'] );
+			update_user_meta( $user_id, self::META_HIRE_DATE, $hire_date ? gmdate( 'Y-m-d', strtotime( $hire_date ) ) : '' );
+		}
+		
+		if ( isset( $data['password'] ) && $data['password'] ) {
+			wp_set_password( wp_unslash( $data['password'] ), $user_id );
+		}
+
+		VMS_Cache::bust( 'employees' );
+		$new_profile = self::get_staff_profile( $user_id );
+		VMS_Audit_Trail::log_update( VMS_Audit_Trail::CAT_EMPLOYEE, 'user', $user_id, $old_profile, $new_profile ?: array() );
+
+		do_action( 'vms_staff_updated', $user_id, $data, $old_profile );
+
+		return true;
+	}
+
+	/**
+	 * Delete staff.
+	 *
+	 * @param int $user_id User ID.
+	 * @return bool|\WP_Error
+	 */
+	public static function delete_staff( int $user_id ) {
+		$profile = self::get_staff_profile( $user_id );
+		if ( ! $profile ) {
+			return new \WP_Error( 'not_found', __( 'Staff member not found.', 'vms-plugin' ) );
+		}
+		
+		if ( $user_id === get_current_user_id() ) {
+			return new \WP_Error( 'delete_self', __( 'You cannot delete yourself.', 'vms-plugin' ) );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		if ( ! wp_delete_user( $user_id ) ) {
+			return new \WP_Error( 'delete_failed', __( 'Failed to delete user.', 'vms-plugin' ) );
+		}
+
+		VMS_Cache::bust( 'employees' );
+		VMS_Audit_Trail::log_delete( VMS_Audit_Trail::CAT_EMPLOYEE, 'user', $user_id, $profile );
+
+		do_action( 'vms_staff_deleted', $user_id, $profile );
+
+		return true;
+	}
+
+	/**
+	 * Block login for users with suspended or banned status.
+	 *
+	 * @param \WP_User|\WP_Error|null $user     Authenticated user or error.
+	 * @param string                  $username Submitted username.
+	 * @param string                  $password Submitted password.
+	 * @return \WP_User|\WP_Error
+	 */
+	public function block_staff_login( $user, $username, $password ) {
+		if ( ! $user instanceof \WP_User ) {
+			return $user;
+		}
+
+		$is_staff = false;
+		foreach ( self::STAFF_ROLES as $r ) {
+			if ( in_array( $r, $user->roles, true ) ) {
+				$is_staff = true;
+				break;
+			}
+		}
+
+		if ( ! $is_staff ) {
+			return $user;
+		}
+
+		$status = get_user_meta( $user->ID, self::META_STAFF_STATUS, true ) ?: VMS_Config::STATUS_ACTIVE;
+
+		if ( VMS_Config::STATUS_SUSPENDED === $status ) {
+			return new \WP_Error(
+				'vms_staff_suspended',
+				__( 'Your account has been suspended. Please contact the administrator.', 'vms-plugin' )
+			);
+		}
+
+		if ( VMS_Config::STATUS_BANNED === $status ) {
+			return new \WP_Error(
+				'vms_staff_banned',
+				__( 'Your account has been permanently banned. Please contact the administrator.', 'vms-plugin' )
+			);
+		}
+
+		return $user;
+	}
+
 	// =====================================================================
 	// AJAX HANDLERS
 	// =====================================================================
 
-	/**
-	 * AJAX: register an employee.
-	 *
-	 * @return void
-	 */
-	public function ajax_register_employee(): void {
+	public function ajax_create_staff(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
 
-		$result = self::create_employee(
+		$result = self::create_staff(
 			array(
-				'wp_user_id'      => self::get_post_int( 'wp_user_id' ),
-				'employee_number' => self::get_post_text( 'employee_number' ),
 				'first_name'      => self::get_post_text( 'first_name' ),
 				'last_name'       => self::get_post_text( 'last_name' ),
 				'email'           => self::get_post_email( 'email' ),
-				'phone_number'    => self::get_post_text( 'phone_number' ),
+				'role'            => self::get_post_text( 'role' ) ?: self::get_post_text( 'position' ),
+				'employee_number' => self::get_post_text( 'employee_number' ),
 				'id_number'       => self::get_post_text( 'id_number' ),
+				'phone_number'    => self::get_post_text( 'phone_number' ),
 				'department'      => self::get_post_text( 'department' ),
-				'position'        => self::get_post_text( 'position' ),
 				'hire_date'       => self::get_post_text( 'hire_date' ),
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing
+				'password'        => isset( $_POST['password'] ) ? wp_unslash( $_POST['password'] ) : '',
 			)
 		);
 
@@ -339,201 +457,99 @@ final class VMS_Employees extends Singleton {
 			wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code(), 'data' => $result->get_error_data() ) );
 		}
 
-		$employee = self::get_employee( $result );
-		wp_send_json_success( array( 'employee' => $employee, 'message' => __( 'Employee registered successfully.', 'vms-plugin' ) ) );
+		wp_send_json_success( array( 'employee' => self::get_staff_profile( $result ), 'message' => __( 'Staff member created successfully.', 'vms-plugin' ) ) );
 	}
 
-	/**
-	 * AJAX: update an employee.
-	 *
-	 * @return void
-	 */
-	public function ajax_update_employee(): void {
+	public function ajax_update_staff(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
 
-		$employee_id = self::get_post_int( 'employee_id' );
-		$data        = array_filter(
+		$user_id = self::get_post_int( 'employee_id' ) ?: self::get_post_int( 'user_id' );
+		if ( ! $user_id ) {
+			wp_send_json_error( array( 'message' => __( 'Missing user ID.', 'vms-plugin' ) ) );
+		}
+
+		$data = array_filter(
 			array(
-				'employee_number' => self::get_post_text( 'employee_number' ),
 				'first_name'      => self::get_post_text( 'first_name' ),
 				'last_name'       => self::get_post_text( 'last_name' ),
 				'email'           => self::get_post_email( 'email' ),
-				'phone_number'    => self::get_post_text( 'phone_number' ),
+				'role'            => self::get_post_text( 'role' ) ?: self::get_post_text( 'position' ),
+				'employee_number' => self::get_post_text( 'employee_number' ),
 				'id_number'       => self::get_post_text( 'id_number' ),
+				'phone_number'    => self::get_post_text( 'phone_number' ),
 				'department'      => self::get_post_text( 'department' ),
-				'position'        => self::get_post_text( 'position' ),
 				'hire_date'       => self::get_post_text( 'hire_date' ),
 			),
 			static fn( $v ) => '' !== $v
 		);
 
 		// phpcs:disable WordPress.Security.NonceVerification.Missing
-		if ( isset( $_POST['wp_user_id'] ) ) {
-			$data['wp_user_id'] = self::get_post_int( 'wp_user_id' );
-		}
 		if ( isset( $_POST['employee_status'] ) ) {
 			$data['employee_status'] = self::get_post_text( 'employee_status' );
 		}
+		if ( isset( $_POST['password'] ) && $_POST['password'] ) {
+			$data['password'] = wp_unslash( $_POST['password'] );
+		}
 		// phpcs:enable
 
-		$result = self::update_employee( $employee_id, $data );
+		$result = self::update_staff( $user_id, $data );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 		}
 
-		wp_send_json_success( array( 'employee' => self::get_employee( $employee_id ), 'message' => __( 'Employee updated.', 'vms-plugin' ) ) );
+		wp_send_json_success( array( 'employee' => self::get_staff_profile( $user_id ), 'message' => __( 'Staff member updated.', 'vms-plugin' ) ) );
 	}
 
-	/**
-	 * AJAX: delete an employee.
-	 *
-	 * @return void
-	 */
-	public function ajax_delete_employee(): void {
+	public function ajax_delete_staff(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
 
-		$result = self::delete_employee( self::get_post_int( 'employee_id' ) );
+		$user_id = self::get_post_int( 'employee_id' ) ?: self::get_post_int( 'user_id' );
+		$result  = self::delete_staff( $user_id );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 		}
 
-		wp_send_json_success( array( 'message' => __( 'Employee deleted.', 'vms-plugin' ) ) );
+		wp_send_json_success( array( 'message' => __( 'Staff member deleted.', 'vms-plugin' ) ) );
 	}
 
-	/**
-	 * AJAX: get employees (paginated).
-	 *
-	 * @return void
-	 */
-	public function ajax_get_employees(): void {
+	public function ajax_get_staff_list(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
 
-		$result = self::get_employees(
+		$result = self::get_staff_list(
 			self::get_post_int( 'per_page' ) ?: 50,
 			self::get_post_int( 'page' ) ?: 1,
-			self::get_post_text( 'status' )
+			self::get_post_text( 'status' ),
+			self::get_post_text( 'search' ),
+			self::get_post_text( 'role' )
 		);
 
 		wp_send_json_success( $result );
 	}
-
-	/**
-	 * AJAX: search employees by name/employee number/department.
-	 *
-	 * @return void
-	 */
-	public function ajax_search_employees(): void {
+	
+	public function ajax_get_staff_profile(): void {
 		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
 
-		global $wpdb;
+		$user_id = self::get_post_int( 'user_id' );
+		$profile = self::get_staff_profile( $user_id );
 
-		$term  = self::get_post_text( 'term' );
-		$table = VMS_Config::get_table_name( VMS_Config::TABLE_EMPLOYEES );
+		if ( ! $profile ) {
+			wp_send_json_error( array( 'message' => __( 'Staff member not found.', 'vms-plugin' ) ) );
+		}
 
+		wp_send_json_success( array( 'profile' => $profile ) );
+	}
+
+	public function ajax_search_staff(): void {
+		self::verify_ajax( 'vms_guest_nonce', VMS_Config::CAP_MANAGE_EMPLOYEES );
+
+		$term = self::get_post_text( 'term' );
 		if ( strlen( $term ) < 2 ) {
 			wp_send_json_success( array( 'results' => array() ) );
 		}
 
-		$like = '%' . $wpdb->esc_like( $term ) . '%';
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$results = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT id, employee_number, first_name, last_name, email, department, position, employee_status
-				 FROM `{$table}`
-				 WHERE first_name LIKE %s OR last_name LIKE %s OR employee_number LIKE %s OR department LIKE %s OR id_number LIKE %s
-				 ORDER BY last_name ASC, first_name ASC
-				 LIMIT 20",
-				$like,
-				$like,
-				$like,
-				$like,
-				$like
-			),
-			ARRAY_A
-		);
-
-		wp_send_json_success( array( 'results' => $results ) );
-	}
-
-	// =====================================================================
-	// HELPERS
-	// =====================================================================
-
-	/**
-	 * Validate & sanitize employee input.
-	 *
-	 * @param array $data       Raw input.
-	 * @param int   $exclude_id Employee ID to exclude from uniqueness checks (for updates).
-	 * @return array|\WP_Error
-	 */
-	private static function validate_employee_data( array $data, int $exclude_id = 0 ) {
-		$out = array();
-
-		// Required fields.
-		if ( isset( $data['employee_number'] ) ) {
-			$out['employee_number'] = sanitize_text_field( $data['employee_number'] );
-			if ( empty( $out['employee_number'] ) ) {
-				return new \WP_Error( 'missing_employee_number', __( 'Employee number is required.', 'vms-plugin' ) );
-			}
-		}
-
-		if ( isset( $data['first_name'] ) ) {
-			$out['first_name'] = sanitize_text_field( $data['first_name'] );
-			if ( empty( $out['first_name'] ) ) {
-				return new \WP_Error( 'missing_first_name', __( 'First name is required.', 'vms-plugin' ) );
-			}
-		}
-
-		if ( isset( $data['last_name'] ) ) {
-			$out['last_name'] = sanitize_text_field( $data['last_name'] );
-			if ( empty( $out['last_name'] ) ) {
-				return new \WP_Error( 'missing_last_name', __( 'Last name is required.', 'vms-plugin' ) );
-			}
-		}
-
-		// Optional fields.
-		if ( isset( $data['wp_user_id'] ) ) {
-			$out['wp_user_id'] = absint( $data['wp_user_id'] ) ?: null;
-		}
-
-		if ( isset( $data['email'] ) ) {
-			$email = sanitize_email( $data['email'] );
-			$out['email'] = $email && is_email( $email ) ? $email : null;
-		}
-
-		if ( isset( $data['phone_number'] ) ) {
-			$out['phone_number'] = sanitize_text_field( $data['phone_number'] ) ?: null;
-		}
-
-		if ( isset( $data['id_number'] ) ) {
-			$id = preg_replace( '/[^A-Za-z0-9]/', '', $data['id_number'] );
-			$out['id_number'] = $id ?: null;
-		}
-
-		if ( isset( $data['department'] ) ) {
-			$out['department'] = sanitize_text_field( $data['department'] ) ?: null;
-		}
-
-		if ( isset( $data['position'] ) ) {
-			$out['position'] = sanitize_text_field( $data['position'] ) ?: null;
-		}
-
-		if ( isset( $data['employee_status'] ) ) {
-			$status = sanitize_text_field( $data['employee_status'] );
-			$valid  = array( VMS_Config::STATUS_ACTIVE, VMS_Config::STATUS_SUSPENDED, 'terminated' );
-			if ( in_array( $status, $valid, true ) ) {
-				$out['employee_status'] = $status;
-			}
-		}
-
-		if ( isset( $data['hire_date'] ) ) {
-			$hire_date = sanitize_text_field( $data['hire_date'] );
-			$out['hire_date'] = $hire_date ? gmdate( 'Y-m-d', strtotime( $hire_date ) ) : null;
-		}
-
-		return $out;
+		$result = self::get_staff_list( 20, 1, '', $term );
+		wp_send_json_success( array( 'results' => $result['rows'] ) );
 	}
 }

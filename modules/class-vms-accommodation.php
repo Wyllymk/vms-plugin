@@ -192,22 +192,16 @@ final class VMS_Accommodation extends Singleton {
 	 * @return array|null
 	 */
 	public static function get_guest( int $guest_id ): ?array {
-		return VMS_Cache::cached(
-			"accom:guest_id_{$guest_id}",
-			static function () use ( $guest_id ) {
-				global $wpdb;
-				$table = VMS_Config::get_table_name( VMS_Config::TABLE_ACCOM_GUESTS );
+		global $wpdb;
+		$table = VMS_Config::get_table_name( VMS_Config::TABLE_ACCOM_GUESTS );
 
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$row = $wpdb->get_row(
-					$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $guest_id ),
-					ARRAY_A
-				);
-
-				return $row ?: null;
-			},
-			VMS_Config::CACHE_TTL_MEDIUM
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d", $guest_id ),
+			ARRAY_A
 		);
+
+		return $row ?: null;
 	}
 
 	/**
@@ -222,7 +216,7 @@ final class VMS_Accommodation extends Singleton {
 			return null;
 		}
 
-		return VMS_Cache::cached(
+		$result = VMS_Cache::cached(
 			'accom:phone_' . md5( $normalized ),
 			static function () use ( $normalized ) {
 				global $wpdb;
@@ -234,10 +228,12 @@ final class VMS_Accommodation extends Singleton {
 					ARRAY_A
 				);
 
-				return $row ?: null;
+				return $row ?: false; // false = not found, won't be cached
 			},
 			VMS_Config::CACHE_TTL_MEDIUM
 		);
+
+		return $result ?: null;
 	}
 
 	/**

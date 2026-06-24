@@ -251,7 +251,7 @@ final class VMS_Visit_Limits {
 					'new_status' => VMS_Config::VISIT_APPROVED,
 				);
 
-				// Re-bust so next iteration sees this approval counted.
+				// Re-bust so next iteration's count query sees this approval.
 				VMS_Cache::bust( 'visits' );
 			}
 		}
